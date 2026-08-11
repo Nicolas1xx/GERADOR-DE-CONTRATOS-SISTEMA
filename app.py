@@ -46,6 +46,24 @@ def gerar():
         flash("Preencha os campos obrigatórios: " + ", ".join(faltando) + ".", "erro")
         return render_template("index.html", valores=request.form), 400
 
+    cpf = re.sub(r"\D", "", request.form.get("cpf_contratante", ""))
+    documento_clinica = re.sub(r"\D", "", request.form.get("cpf_cnpj_contratada", ""))
+    cep = re.sub(r"\D", "", request.form.get("cep_contratante", ""))
+    erros = []
+    if len(cpf) != 11:
+        erros.append("o CPF do contratante deve ter 11 números")
+    if len(documento_clinica) not in (11, 14):
+        erros.append("o CPF/CNPJ da contratada deve ter 11 ou 14 números")
+    if len(cep) != 8:
+        erros.append("o CEP deve ter 8 números")
+    if not re.search(r"\d", request.form.get("valor", "")):
+        erros.append("informe um valor válido para o tratamento")
+    if len(request.form.get("procedimentos", "").strip()) < 3:
+        erros.append("descreva os procedimentos odontológicos")
+    if erros:
+        flash("Revise os dados: " + "; ".join(erros) + ".", "erro")
+        return render_template("index.html", valores=request.form), 400
+
     template_source = DEFAULT_TEMPLATE
 
     try:
