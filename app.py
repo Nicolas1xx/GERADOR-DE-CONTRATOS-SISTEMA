@@ -3,13 +3,12 @@ import os
 import re
 
 from flask import Flask, flash, render_template, request, send_file
-from werkzeug.utils import secure_filename
-
 from contract_generator import default_contract_form, generate_contract_docx
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_TEMPLATE = os.path.join(BASE_DIR, "modelo_contrato_prestacao_servicos.docx")
+DEFAULT_TEMPLATE = os.path.join(BASE_DIR, "modelo_contrato_odontologico.docx")
+DEFAULT_LOGO = os.path.join(BASE_DIR, "logo_consultorio_angelo.jpg")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "gerador-contratos-local")
@@ -21,25 +20,27 @@ def index():
     return render_template("index.html", valores=default_contract_form())
 
 
+@app.get("/logo")
+def logo():
+    return send_file(DEFAULT_LOGO, mimetype="image/jpeg")
+
+
 @app.post("/gerar")
 def gerar():
     obrigatorios = {
-        "nome_contratado": "Nome completo",
-        "especialidade": "Especialidade",
-        "rg": "RG",
-        "cpf": "CPF",
-        "registro_profissional": "Registro profissional",
-        "endereco": "Endereço",
-        "municipio": "Município",
-        "uf": "UF",
-        "numero_contrato": "Número do contrato",
-        "licitacao": "Licitação",
-        "descricao_servicos": "Descrição dos serviços",
-        "carga_horaria": "Carga horária",
-        "honorarios": "Honorários",
-        "prazo_pagamento": "Prazo de pagamento",
-        "multa_rescisao": "Multa de rescisão",
-        "data_assinatura": "Local e data da assinatura",
+        "nome_contratante": "Nome do contratante",
+        "cpf_contratante": "CPF do contratante",
+        "cidade_contratante": "Cidade do contratante",
+        "endereco_contratante": "Endereço do contratante",
+        "bairro_contratante": "Bairro",
+        "cep_contratante": "CEP",
+        "nome_contratada": "Nome da clínica/contratada",
+        "cpf_cnpj_contratada": "CPF/CNPJ da contratada",
+        "nome_paciente": "Nome do paciente",
+        "procedimentos": "Procedimentos",
+        "valor": "Valor do tratamento",
+        "cidade_clinica": "Cidade da clínica",
+        "data_contrato": "Data do contrato",
     }
     faltando = [rotulo for campo, rotulo in obrigatorios.items() if not request.form.get(campo, "").strip()]
     if faltando:
@@ -56,12 +57,13 @@ def gerar():
             return render_template("index.html", valores=request.form), 400
         template_source = BytesIO(modelo.read())
 
-    image_source = None
+    image_source = open(DEFAULT_LOGO, "rb")
     if imagem and imagem.filename:
         extensao = os.path.splitext(imagem.filename)[1].lower()
         if extensao not in {".png", ".jpg", ".jpeg"}:
             flash("A imagem precisa estar em PNG, JPG ou JPEG.", "erro")
             return render_template("index.html", valores=request.form), 400
+        image_source.close()
         image_source = BytesIO(imagem.read())
 
     try:
@@ -70,7 +72,7 @@ def gerar():
         flash(str(exc), "erro")
         return render_template("index.html", valores=request.form), 400
 
-    nome = re.sub(r"[^A-Za-z0-9_-]+", "_", request.form["nome_contratado"].strip()).strip("_") or "contratado"
+    nome = re.sub(r"[^A-Za-z0-9_-]+", "_", request.form["nome_paciente"].strip()).strip("_") or "paciente"
     return send_file(
         arquivo,
         as_attachment=True,

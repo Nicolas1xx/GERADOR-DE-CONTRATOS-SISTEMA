@@ -1,56 +1,34 @@
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Gerador de Contratos</title>
-  <style>
-    :root{--azul:#0757a6;--escuro:#063361;--fundo:#eef3f8;--linha:#d8e1ec;--texto:#24364b;--muted:#687a90}
-    *{box-sizing:border-box}body{margin:0;background:var(--fundo);font-family:Segoe UI,Arial,sans-serif;color:var(--texto)}
-    header{background:linear-gradient(125deg,var(--escuro),var(--azul));color:#fff;padding:34px max(20px,calc((100vw - 1120px)/2))}header h1{margin:0 0 7px;font-size:30px}header p{margin:0;opacity:.86}
-    main{max-width:1120px;margin:26px auto 50px;padding:0 18px}form{display:grid;gap:18px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:23px;box-shadow:0 8px 28px #1838580d}
-    h2{margin:0 0 19px;font-size:18px;color:var(--escuro)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.field{display:grid;gap:7px}.full{grid-column:1/-1}
-    label{font-size:13px;font-weight:750;color:#43546a}.req:after{content:" *";color:#c62828}input,textarea{width:100%;padding:12px 13px;border:1px solid var(--linha);border-radius:10px;font:inherit;background:#fffef2;color:#172b42}textarea{min-height:78px;resize:vertical}input:focus,textarea:focus{outline:0;border-color:var(--azul);box-shadow:0 0 0 3px #0757a61a;background:#fff}
-    .upload{border:1.5px dashed #9eb4ca;background:#f8fbff;padding:17px;border-radius:12px}.upload input{background:#fff}.hint{font-size:12px;color:var(--muted);line-height:1.45}.notice{background:#fff8d9;border:1px solid #eed57a;border-radius:12px;padding:15px 17px;margin-bottom:18px;line-height:1.45}.alert{background:#fee7e7;color:#8c1e1e;border:1px solid #f4bcbc;padding:14px;border-radius:11px;margin-bottom:16px;font-weight:650}
-    .actions{position:sticky;bottom:0;display:flex;justify-content:flex-end;padding:14px 0;background:#eef3f8e8;backdrop-filter:blur(8px)}button{border:0;border-radius:11px;background:var(--azul);color:#fff;padding:14px 22px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 8px 18px #0757a633}button:hover{background:#064b8e}.file-name{font-size:12px;color:var(--azul);font-weight:700;min-height:17px}
-    @media(max-width:720px){header h1{font-size:25px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}.actions button{width:100%}}
-  </style>
-</head>
-<body>
-<header><h1>Gerador de Contratos</h1><p>Preencha os dados, importe seu modelo e gere o contrato completo em Word.</p></header>
-<main>
-  {% with mensagens = get_flashed_messages(with_categories=true) %}{% for categoria,mensagem in mensagens %}<div class="alert">{{ mensagem }}</div>{% endfor %}{% endwith %}
-  <div class="notice"><strong>Como funciona:</strong> você pode usar o modelo já incluído ou importar outro contrato-base em Word. Os 34 trechos variáveis devem continuar destacados em amarelo e na mesma ordem.</div>
-  <form method="post" action="/gerar" enctype="multipart/form-data">
-    <section class="card"><h2>Contrato-base e imagem</h2><div class="grid">
-      <div class="field upload"><label>Importar contrato-base (.docx)</label><input type="file" name="contrato_base" accept=".docx" onchange="showName(this,'baseName')"><div id="baseName" class="file-name"></div><span class="hint">Opcional. Sem arquivo, será usado o modelo padrão fornecido.</span></div>
-      <div class="field upload"><label>Imagem no canto esquerdo</label><input type="file" name="imagem_cabecalho" accept=".png,.jpg,.jpeg" onchange="showName(this,'imageName')"><div id="imageName" class="file-name"></div><span class="hint">Opcional. PNG ou JPG; será inserida no cabeçalho esquerdo com 3,2 cm de largura.</span></div>
-    </div></section>
-    <section class="card"><h2>Dados do contratado</h2><div class="grid">
-      <div class="field full"><label class="req">Nome completo</label><input name="nome_contratado" value="{{ valores.get('nome_contratado','') }}" required></div>
-      <div class="field"><label>Nacionalidade</label><input name="nacionalidade" value="{{ valores.get('nacionalidade','') }}"></div><div class="field"><label>Estado civil</label><input name="estado_civil" value="{{ valores.get('estado_civil','') }}"></div>
-      <div class="field"><label>Profissão</label><input name="profissao" value="{{ valores.get('profissao','') }}"></div><div class="field"><label class="req">Especialidade</label><input name="especialidade" value="{{ valores.get('especialidade','') }}" required></div>
-      <div class="field"><label class="req">RG</label><input name="rg" value="{{ valores.get('rg','') }}" required></div><div class="field"><label class="req">CPF</label><input name="cpf" value="{{ valores.get('cpf','') }}" required></div>
-      <div class="field"><label>Conselho profissional</label><input name="conselho" value="{{ valores.get('conselho','') }}"></div><div class="field"><label class="req">Registro profissional no texto</label><input name="registro_profissional" value="{{ valores.get('registro_profissional','') }}" required></div>
-      <div class="field"><label>Registro na assinatura</label><input name="registro_assinatura" value="{{ valores.get('registro_assinatura','') }}"></div><div class="field full"><label class="req">Endereço completo</label><input name="endereco" value="{{ valores.get('endereco','') }}" required></div>
-    </div></section>
-    <section class="card"><h2>Município e contratação pública</h2><div class="grid">
-      <div class="field"><label class="req">Município</label><input name="municipio" value="{{ valores.get('municipio','') }}" required></div><div class="field"><label class="req">UF</label><input name="uf" maxlength="2" value="{{ valores.get('uf','') }}" required></div>
-      <div class="field"><label class="req">Número do contrato administrativo</label><input name="numero_contrato" value="{{ valores.get('numero_contrato','') }}" required></div><div class="field"><label>Órgão contratante</label><input name="prefeitura" value="{{ valores.get('prefeitura','') }}"></div>
-      <div class="field full"><label class="req">Licitação</label><input name="licitacao" value="{{ valores.get('licitacao','') }}" required></div>
-    </div></section>
-    <section class="card"><h2>Serviço, jornada e pagamento</h2><div class="grid">
-      <div class="field full"><label class="req">Descrição dos serviços</label><input name="descricao_servicos" value="{{ valores.get('descricao_servicos','') }}" required></div>
-      <div class="field"><label>Referência à profissão</label><input name="profissao_referencia" value="{{ valores.get('profissao_referencia','') }}"></div><div class="field"><label>Área profissional</label><input name="natureza_profissional" value="{{ valores.get('natureza_profissional','') }}"></div>
-      <div class="field"><label>Referência à especialidade</label><input name="especialidade_referencia" value="{{ valores.get('especialidade_referencia','') }}"></div><div class="field"><label>Regime</label><input name="regime" value="{{ valores.get('regime','') }}"></div>
-      <div class="field"><label class="req">Carga horária</label><input name="carga_horaria" value="{{ valores.get('carga_horaria','') }}" required></div><div class="field"><label class="req">Honorários</label><input name="honorarios" value="{{ valores.get('honorarios','') }}" required></div>
-      <div class="field full"><label class="req">Prazo de pagamento</label><input name="prazo_pagamento" value="{{ valores.get('prazo_pagamento','') }}" required></div><div class="field full"><label>Regra de substituição</label><textarea name="regra_substituicao">{{ valores.get('regra_substituicao','') }}</textarea></div>
-    </div></section>
-    <section class="card"><h2>Rescisão e assinatura</h2><div class="grid">
-      <div class="field"><label class="req">Multa de rescisão</label><input name="multa_rescisao" value="{{ valores.get('multa_rescisao','') }}" required></div><div class="field"><label class="req">Local e data da assinatura</label><input name="data_assinatura" value="{{ valores.get('data_assinatura','') }}" required></div>
-      <div class="field"><label>Rótulo abaixo da assinatura</label><input name="rotulo_contratado" value="{{ valores.get('rotulo_contratado','') }}"></div>
-    </div></section>
-    <div class="actions"><button type="submit">Gerar contrato em Word</button></div>
-  </form>
-</main>
-<script>function showName(input,id){document.getElementById(id).textContent=input.files.length?'Selecionado: '+input.files[0].name:''}</script>
-</body></html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Contratos | Dr. Ângelo G. Martinez</title>
+<style>
+:root{--gold:#d4a83c;--gold2:#f2d878;--black:#171717;--card:#242424;--line:#444;--text:#f7f3e9;--muted:#bbb3a2}*{box-sizing:border-box}
+body{margin:0;background:#111;color:var(--text);font-family:Segoe UI,Arial,sans-serif;background-image:radial-gradient(circle at 80% -10%,#5a451c55,transparent 35%)}
+.hero{min-height:235px;border-bottom:1px solid #5e4a22;background:linear-gradient(120deg,#111 0%,#232323 70%,#392d16 100%)}
+.hero-inner{max-width:1120px;margin:auto;padding:28px 20px;display:flex;align-items:center;gap:28px}.logo{width:175px;height:175px;object-fit:contain;border-radius:50%;filter:drop-shadow(0 10px 24px #000)}
+.hero h1{margin:0;color:var(--gold2);font-family:Georgia,serif;font-size:34px;font-weight:500}.hero h1 span{display:block;color:#fff;font-size:22px;margin-top:8px}.hero p{color:#c9c2b3;line-height:1.55;margin-bottom:0}
+main{max-width:1120px;margin:28px auto 55px;padding:0 18px}form{display:grid;gap:18px}.card{background:#202020;border:1px solid #3d382e;border-radius:15px;padding:23px;box-shadow:0 12px 32px #0004}
+h2{margin:0 0 19px;color:var(--gold2);font-family:Georgia,serif;font-size:20px;font-weight:500}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.field{display:grid;gap:7px}.full{grid-column:1/-1}
+label{font-size:13px;font-weight:700;color:#d7cfbf}.req:after{content:" *";color:var(--gold)}input,textarea{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:9px;background:#151515;color:#fff;font:inherit}textarea{min-height:105px;resize:vertical}input:focus,textarea:focus{outline:0;border-color:var(--gold);box-shadow:0 0 0 3px #d4a83c22}
+.upload{border:1px dashed #8b743d;background:#191919;padding:16px;border-radius:11px}.hint{font-size:12px;color:var(--muted);line-height:1.4}.notice{border-left:4px solid var(--gold);background:#242117;padding:15px 17px;border-radius:8px;margin-bottom:18px;color:#ddd4c2}.alert{background:#431f1f;border:1px solid #8e4646;color:#ffdada;padding:14px;border-radius:9px;margin-bottom:16px}
+.actions{position:sticky;bottom:0;padding:14px 0;background:#111e;backdrop-filter:blur(8px);display:flex;justify-content:flex-end}button{border:1px solid #f1d472;background:linear-gradient(135deg,#b8871f,#e0b94e);color:#15110a;border-radius:10px;padding:14px 23px;font-weight:850;font-size:15px;cursor:pointer;box-shadow:0 9px 22px #0008}button:hover{filter:brightness(1.08)}
+@media(max-width:720px){.hero-inner{flex-direction:column;text-align:center}.logo{width:140px;height:140px}.hero h1{font-size:27px}.grid{grid-template-columns:1fr}.full{grid-column:auto}.card{padding:18px}.actions button{width:100%}}
+</style></head><body>
+<header class="hero"><div class="hero-inner"><img class="logo" src="/logo" alt="Consultório Odontológico Dr. Ângelo G. Martinez"><div><h1>Consultório Odontológico<span>Dr. Ângelo G. Martinez</span></h1><p>Gerador de contratos de prestação de serviços odontológicos.<br>Preencha os dados do paciente e baixe o documento pronto em Word.</p></div></div></header>
+<main>{% with msgs=get_flashed_messages(with_categories=true) %}{% for c,m in msgs %}<div class="alert">{{m}}</div>{% endfor %}{% endwith %}
+<div class="notice"><strong>Modelo personalizado:</strong> o contrato jurídico enviado e o logotipo do consultório já estão configurados. Os campos com * são obrigatórios.</div>
+<form method="post" action="/gerar" enctype="multipart/form-data">
+<section class="card"><h2>Dados do contratante</h2><div class="grid">
+<div class="field full"><label class="req">Nome completo</label><input name="nome_contratante" value="{{valores.get('nome_contratante','')}}" required></div>
+<div class="field"><label class="req">CPF / documento</label><input name="cpf_contratante" value="{{valores.get('cpf_contratante','')}}" required></div><div class="field"><label class="req">Cidade</label><input name="cidade_contratante" value="{{valores.get('cidade_contratante','')}}" required></div>
+<div class="field full"><label class="req">Rua, número e complemento</label><input name="endereco_contratante" value="{{valores.get('endereco_contratante','')}}" required></div><div class="field"><label class="req">Bairro</label><input name="bairro_contratante" value="{{valores.get('bairro_contratante','')}}" required></div><div class="field"><label class="req">CEP</label><input name="cep_contratante" value="{{valores.get('cep_contratante','')}}" required></div>
+</div></section>
+<section class="card"><h2>Paciente e tratamento</h2><div class="grid">
+<div class="field full"><label class="req">Nome do paciente</label><input name="nome_paciente" value="{{valores.get('nome_paciente','')}}" required></div><div class="field full"><label class="req">Procedimentos odontológicos</label><textarea name="procedimentos" required>{{valores.get('procedimentos','')}}</textarea></div><div class="field"><label class="req">Valor total</label><input name="valor" value="{{valores.get('valor','')}}" required></div>
+</div></section>
+<section class="card"><h2>Dados da clínica</h2><div class="grid">
+<div class="field full"><label class="req">Nome da contratada</label><input name="nome_contratada" value="{{valores.get('nome_contratada','')}}" required></div><div class="field"><label class="req">CPF/CNPJ da contratada</label><input name="cpf_cnpj_contratada" value="{{valores.get('cpf_cnpj_contratada','')}}" required></div><div class="field"><label class="req">Cidade da clínica</label><input name="cidade_clinica" value="{{valores.get('cidade_clinica','')}}" required></div><div class="field"><label class="req">Data do contrato</label><input name="data_contrato" value="{{valores.get('data_contrato','')}}" required></div>
+</div></section>
+<section class="card"><h2>Personalização opcional</h2><div class="grid">
+<div class="field upload"><label>Substituir contrato-base</label><input type="file" name="contrato_base" accept=".docx"><span class="hint">Use somente um .docx que contenha as mesmas chaves do modelo atual.</span></div><div class="field upload"><label>Substituir logotipo</label><input type="file" name="imagem_cabecalho" accept=".png,.jpg,.jpeg"><span class="hint">Se não enviar, será usado automaticamente o logo do Dr. Ângelo.</span></div>
+</div></section><div class="actions"><button type="submit">Gerar contrato em Word</button></div></form></main></body></html>
