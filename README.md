@@ -5,4 +5,4 @@
 3. Preencha os dados do contratante, paciente, tratamento e clínica.
 4. Clique em **Gerar contrato em Word**.
 
-O modelo odontológico e o logotipo do consultório já estão configurados. Outro contrato-base pode ser enviado opcionalmente, desde que preserve as mesmas chaves `{{campo}}`. Imagens aceitas: PNG, JPG e JPEG. Limite total de upload: 20 MB.
+O modelo odontológico oficial e o logotipo do consultório já estão configurados no sistema. O usuário precisa apenas preencher os dados e gerar o Word.

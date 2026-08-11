@@ -1,4 +1,3 @@
-from io import BytesIO
 import os
 import re
 
@@ -47,27 +46,11 @@ def gerar():
         flash("Preencha os campos obrigatórios: " + ", ".join(faltando) + ".", "erro")
         return render_template("index.html", valores=request.form), 400
 
-    modelo = request.files.get("contrato_base")
-    imagem = request.files.get("imagem_cabecalho")
     template_source = DEFAULT_TEMPLATE
 
-    if modelo and modelo.filename:
-        if not modelo.filename.lower().endswith(".docx"):
-            flash("O contrato-base precisa ser um arquivo Word .docx.", "erro")
-            return render_template("index.html", valores=request.form), 400
-        template_source = BytesIO(modelo.read())
-
-    image_source = open(DEFAULT_LOGO, "rb")
-    if imagem and imagem.filename:
-        extensao = os.path.splitext(imagem.filename)[1].lower()
-        if extensao not in {".png", ".jpg", ".jpeg"}:
-            flash("A imagem precisa estar em PNG, JPG ou JPEG.", "erro")
-            return render_template("index.html", valores=request.form), 400
-        image_source.close()
-        image_source = BytesIO(imagem.read())
-
     try:
-        arquivo = generate_contract_docx(request.form, template_source, image_source)
+        with open(DEFAULT_LOGO, "rb") as image_source:
+            arquivo = generate_contract_docx(request.form, template_source, image_source)
     except Exception as exc:
         flash(str(exc), "erro")
         return render_template("index.html", valores=request.form), 400
