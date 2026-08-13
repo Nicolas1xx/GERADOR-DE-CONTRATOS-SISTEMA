@@ -29,15 +29,26 @@ def gerar():
     obrigatorios = {
         "nome_contratante": "Nome do contratante",
         "cpf_contratante": "CPF do contratante",
+        "rg_contratante": "RG do contratante",
         "cidade_contratante": "Cidade do contratante",
         "endereco_contratante": "Endereço do contratante",
+        "numero": "Número do endereço",
         "bairro_contratante": "Bairro",
         "cep_contratante": "CEP",
+        "telefone": "Telefone",
+        "email": "E-mail",
         "nome_contratada": "Nome da clínica/contratada",
         "cpf_cnpj_contratada": "CPF/CNPJ da contratada",
+        "cro": "CRO da contratada",
+        "endereco_clinica": "Endereço profissional da clínica",
         "nome_paciente": "Nome do paciente",
         "procedimentos": "Procedimentos",
-        "valor": "Valor do tratamento",
+        "valor_total": "Valor total do tratamento",
+        "forma_pagamento": "Forma de pagamento",
+        "parcelas": "Número de parcelas",
+        "vencimentos": "Vencimentos",
+        "valor_avaliacao": "Valor da avaliação",
+        "limite_atraso": "Limite de atraso",
         "cidade_clinica": "Cidade da clínica",
         "data_contrato": "Data do contrato",
     }
@@ -49,6 +60,7 @@ def gerar():
     cpf = re.sub(r"\D", "", request.form.get("cpf_contratante", ""))
     documento_clinica = re.sub(r"\D", "", request.form.get("cpf_cnpj_contratada", ""))
     cep = re.sub(r"\D", "", request.form.get("cep_contratante", ""))
+    telefone = re.sub(r"\D", "", request.form.get("telefone", ""))
     erros = []
     if len(cpf) != 11:
         erros.append("o CPF do contratante deve ter 11 números")
@@ -56,8 +68,19 @@ def gerar():
         erros.append("o CPF/CNPJ da contratada deve ter 11 ou 14 números")
     if len(cep) != 8:
         erros.append("o CEP deve ter 8 números")
-    if not re.search(r"\d", request.form.get("valor", "")):
+    if len(telefone) not in (10, 11):
+        erros.append("o telefone deve ter DDD e 10 ou 11 números")
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", request.form.get("email", "").strip()):
+        erros.append("informe um e-mail válido")
+    if not re.search(r"\d", request.form.get("valor_total", "")):
         erros.append("informe um valor válido para o tratamento")
+    if not re.search(r"\d", request.form.get("valor_avaliacao", "")):
+        erros.append("informe um valor válido para a avaliação")
+    try:
+        if not 1 <= int(request.form.get("limite_atraso", "0")) <= 180:
+            raise ValueError
+    except ValueError:
+        erros.append("o limite de atraso deve estar entre 1 e 180 minutos")
     if len(request.form.get("procedimentos", "").strip()) < 3:
         erros.append("descreva os procedimentos odontológicos")
     if erros:
@@ -67,8 +90,7 @@ def gerar():
     template_source = DEFAULT_TEMPLATE
 
     try:
-        with open(DEFAULT_LOGO, "rb") as image_source:
-            arquivo = generate_contract_docx(request.form, template_source, image_source)
+        arquivo = generate_contract_docx(request.form, template_source)
     except Exception as exc:
         flash(str(exc), "erro")
         return render_template("index.html", valores=request.form), 400
