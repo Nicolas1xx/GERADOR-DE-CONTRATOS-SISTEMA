@@ -121,7 +121,9 @@ def _validate(form):
     if not re.fullmatch(r"CRO-[A-Z]{2}\s\d{3,8}", form.get("cro", "").strip().upper()):
         errors.append("informe o CRO no formato CRO-UF 12345")
     for field, label in (("cidade_contratante", "cidade do contratante"), ("cidade_clinica", "cidade da clínica")):
-        if not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ .'-]{2,70}/[A-Za-z]{2}", form.get(field, "").strip()):
+        city = form.get(field, "").strip()
+        parts = city.rsplit("/", 1)
+        if len(parts) != 2 or len(parts[0].strip()) < 2 or not re.fullmatch(r"[A-Za-z]{2}", parts[1]):
             errors.append(f"informe a {label} no formato Cidade/UF")
     try:
         datetime.strptime(form.get("data_contrato", ""), "%d/%m/%Y")
