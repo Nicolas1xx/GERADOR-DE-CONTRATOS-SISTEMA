@@ -1,9 +1,9 @@
 # Gerador de Contratos Odontológicos — Dr. Ângelo G. Martinez
 
-1. Dê dois cliques em `iniciar.bat`.
-2. Aguarde a instalação automática e a abertura do navegador.
-3. Preencha os dados do contratante, paciente, tratamento, financeiro e clínica.
-4. Opcionalmente, colha a assinatura do paciente com o mouse ou com o dedo.
-5. Baixe o Word ou use **Gerar e compartilhar no WhatsApp**.
+1. A clínica preenche os dados do contratante, paciente, tratamento e financeiro.
+2. O sistema cria um link protegido, válido por 7 dias.
+3. A clínica envia o link ao paciente pelo WhatsApp.
+4. O paciente confere os dados, aceita e assina com o dedo ou mouse.
+5. O contrato Word assinado é baixado ou compartilhado pelo próprio paciente.
 
-O modelo jurídico reformulado já está configurado. Em celulares compatíveis, o arquivo pode ser compartilhado diretamente pelo menu do aparelho; nos demais dispositivos, o sistema baixa o Word e abre o WhatsApp para que ele seja anexado.
+O modelo jurídico reformulado já está configurado. Para produção, defina a variável de ambiente `SIGNING_SECRET` na Vercel com um valor longo e aleatório; ela protege os dados inseridos nos links de assinatura.
