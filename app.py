@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import zlib
 from datetime import datetime
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -17,6 +18,8 @@ DEFAULT_TEMPLATE = os.path.join(BASE_DIR, "modelo_contrato_odontologico.docx")
 DEFAULT_LOGO = os.path.join(BASE_DIR, "logo_consultorio_angelo.jpg")
 LINK_TTL_SECONDS = 7 * 24 * 60 * 60
 FORM_FIELDS = sorted(set(PLACEHOLDERS.values()) | {"data_contrato"})
+FIELD_CODES = {field: format(index, "x") for index, field in enumerate(FORM_FIELDS)}
+CODE_FIELDS = {code: field for field, code in FIELD_CODES.items()}
 FIELD_LIMITS = {field: 180 for field in FORM_FIELDS} | {
     "email": 150, "procedimentos": 1500, "complemento": 80, "numero": 7,
     "cpf_contratante": 14, "cpf_cnpj_contratada": 18, "cep_contratante": 9,
@@ -174,8 +177,9 @@ def criar_link():
     errors = _validate(request.form)
     if errors:
         return jsonify({"erro": "Revise os dados: " + "; ".join(errors)}), 400
-    payload = json.dumps(_safe_form(request.form), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    token = _fernet().encrypt(payload).decode("ascii")
+    compact = {FIELD_CODES[field]: value for field, value in _safe_form(request.form).items()}
+    payload = json.dumps(compact, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    token = _fernet().encrypt(b"Z" + zlib.compress(payload, level=9)).decode("ascii")
     url = request.url_root.rstrip("/") + "/assinar/" + token
     return jsonify({"url": url, "validade_dias": 7})
 
@@ -184,7 +188,15 @@ def _decode_token(token):
     if len(token) > 25000:
         raise InvalidToken
     raw = _fernet().decrypt(token.encode("ascii"), ttl=LINK_TTL_SECONDS)
-    data = json.loads(raw.decode("utf-8"))
+    if raw.startswith(b"Z"):
+        decompressor = zlib.decompressobj()
+        unpacked = decompressor.decompress(raw[1:], 20001)
+        if len(unpacked) > 20000 or not decompressor.eof:
+            raise InvalidToken
+        compact = json.loads(unpacked.decode("utf-8"))
+        data = {CODE_FIELDS[code]: value for code, value in compact.items() if code in CODE_FIELDS}
+    else:
+        data = json.loads(raw.decode("utf-8"))
     if not isinstance(data, dict) or any(field not in FORM_FIELDS for field in data):
         raise InvalidToken
     return _safe_form(data)
