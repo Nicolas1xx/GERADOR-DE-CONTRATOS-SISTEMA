@@ -5,7 +5,10 @@ import re
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Cm
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Cm, Pt, RGBColor
 
 
 PLACEHOLDERS = {
@@ -79,8 +82,44 @@ def _insert_logo(document, image_source):
             continue
         paragraph = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
         paragraph.clear()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        paragraph.add_run().add_picture(image_source, width=Cm(2.7))
+        paragraph.paragraph_format.space_after = Pt(0)
+        table = section.header.add_table(rows=1, cols=2, width=Cm(16))
+        table.autofit = False
+        table.columns[0].width = Cm(3.2)
+        table.columns[1].width = Cm(12.8)
+        table.rows[0].cells[0].width = Cm(3.2)
+        table.rows[0].cells[1].width = Cm(12.8)
+        table.rows[0].cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        table.rows[0].cells[1].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+        properties = table._tbl.tblPr
+        shading = OxmlElement("w:shd")
+        shading.set(qn("w:fill"), "202020")
+        properties.append(shading)
+        borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border = OxmlElement(f"w:{edge}")
+            border.set(qn("w:val"), "single")
+            border.set(qn("w:sz"), "8" if edge != "insideV" else "0")
+            border.set(qn("w:color"), "D7AA3B")
+            borders.append(border)
+        properties.append(borders)
+
+        logo_paragraph = table.cell(0, 0).paragraphs[0]
+        logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        logo_paragraph.add_run().add_picture(image_source, width=Cm(2.5))
+        brand = table.cell(0, 1).paragraphs[0]
+        brand.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title = brand.add_run("CONSULTÓRIO ODONTOLÓGICO\n")
+        title.bold = True
+        title.font.name = "Georgia"
+        title.font.size = Pt(15)
+        title.font.color.rgb = RGBColor(215, 170, 59)
+        subtitle = brand.add_run("Dr. Ângelo G. Martinez")
+        subtitle.bold = True
+        subtitle.font.name = "Georgia"
+        subtitle.font.size = Pt(11)
+        subtitle.font.color.rgb = RGBColor(255, 255, 255)
         image_source.seek(0)
 
 
@@ -115,6 +154,8 @@ def generate_contract_docx(form, template_source, image_source=None):
     for paragraph in _all_paragraphs(document):
         _replace_in_paragraph(paragraph, replacements)
 
+    if image_source:
+        _insert_logo(document, image_source)
     _insert_patient_signature(document, form.get("assinatura_paciente"))
 
     remaining = sorted({token for paragraph in _all_paragraphs(document) for token in PLACEHOLDERS if token in paragraph.text})

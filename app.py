@@ -139,7 +139,8 @@ def _safe_form(form):
 
 
 def _download(form):
-    arquivo = generate_contract_docx(form, DEFAULT_TEMPLATE)
+    with open(DEFAULT_LOGO, "rb") as logo_file:
+        arquivo = generate_contract_docx(form, DEFAULT_TEMPLATE, logo_file)
     nome = re.sub(r"[^A-Za-z0-9_-]+", "_", form["nome_paciente"].strip()).strip("_") or "paciente"
     return send_file(arquivo, as_attachment=True, download_name=f"contrato_{nome}.docx",
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
