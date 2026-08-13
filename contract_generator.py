@@ -155,5 +155,5 @@ def default_contract_form():
         "valor_avaliacao": "",
         "limite_atraso": "15",
         "cidade_clinica": "",
-        "data_contrato": f"{hoje.day:02d} de {meses[hoje.month - 1]} de {hoje.year}",
+        "data_contrato": hoje.strftime("%d/%m/%Y"),
     }

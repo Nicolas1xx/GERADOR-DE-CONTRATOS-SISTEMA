@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+from datetime import datetime
 
 from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, flash, jsonify, render_template, request, send_file
@@ -16,6 +17,12 @@ DEFAULT_TEMPLATE = os.path.join(BASE_DIR, "modelo_contrato_odontologico.docx")
 DEFAULT_LOGO = os.path.join(BASE_DIR, "logo_consultorio_angelo.jpg")
 LINK_TTL_SECONDS = 7 * 24 * 60 * 60
 FORM_FIELDS = sorted(set(PLACEHOLDERS.values()) | {"data_contrato"})
+FIELD_LIMITS = {field: 180 for field in FORM_FIELDS} | {
+    "email": 150, "procedimentos": 1500, "complemento": 80, "numero": 7,
+    "cpf_contratante": 14, "cpf_cnpj_contratada": 18, "cep_contratante": 9,
+    "telefone": 15, "rg_contratante": 12, "cro": 18, "data_contrato": 10,
+    "valor_total": 25, "valor_avaliacao": 25, "limite_atraso": 3,
+}
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -27,6 +34,34 @@ def _fernet():
     secret = os.environ.get("SIGNING_SECRET") or os.environ.get("SECRET_KEY") or "gerador-contratos-local"
     key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
     return Fernet(key)
+
+
+def _valid_cpf(value):
+    numbers = re.sub(r"\D", "", value or "")
+    if len(numbers) != 11 or numbers == numbers[0] * 11:
+        return False
+    for size in (9, 10):
+        total = sum(int(numbers[index]) * (size + 1 - index) for index in range(size))
+        if (total * 10 % 11) % 10 != int(numbers[size]):
+            return False
+    return True
+
+
+def _valid_cnpj(value):
+    numbers = re.sub(r"\D", "", value or "")
+    if len(numbers) != 14 or numbers == numbers[0] * 14:
+        return False
+    checks = ((12, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]),
+              (13, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]))
+    for size, weights in checks:
+        remainder = sum(int(numbers[index]) * weights[index] for index in range(size)) % 11
+        if (0 if remainder < 2 else 11 - remainder) != int(numbers[size]):
+            return False
+    return True
+
+
+def _valid_money(value):
+    return bool(re.fullmatch(r"(?:R\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}", (value or "").strip()))
 
 
 def _validate(form):
@@ -50,20 +85,26 @@ def _validate(form):
 
     digits = lambda field: re.sub(r"\D", "", form.get(field, ""))
     errors = []
-    if len(digits("cpf_contratante")) != 11:
-        errors.append("o CPF do contratante deve ter 11 números")
-    if len(digits("cpf_cnpj_contratada")) not in (11, 14):
-        errors.append("o CPF/CNPJ da contratada deve ter 11 ou 14 números")
+    for field, limit in FIELD_LIMITS.items():
+        if len(form.get(field, "").strip()) > limit:
+            errors.append(f"o campo {required.get(field, field)} ultrapassa {limit} caracteres")
+    if not _valid_cpf(form.get("cpf_contratante")):
+        errors.append("informe um CPF válido")
+    clinic_document = digits("cpf_cnpj_contratada")
+    if not (_valid_cpf(clinic_document) if len(clinic_document) == 11 else _valid_cnpj(clinic_document)):
+        errors.append("informe um CPF/CNPJ válido para a contratada")
     if len(digits("cep_contratante")) != 8:
         errors.append("o CEP deve ter 8 números")
     if len(digits("telefone")) not in (10, 11):
         errors.append("o telefone deve ter DDD e 10 ou 11 números")
+    if len(digits("rg_contratante")) < 7:
+        errors.append("informe um RG válido")
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", form.get("email", "").strip()):
         errors.append("informe um e-mail válido")
-    if not re.search(r"\d", form.get("valor_total", "")):
-        errors.append("informe um valor válido para o tratamento")
-    if not re.search(r"\d", form.get("valor_avaliacao", "")):
-        errors.append("informe um valor válido para a avaliação")
+    if not _valid_money(form.get("valor_total")):
+        errors.append("informe o valor total no formato 0,00")
+    if not _valid_money(form.get("valor_avaliacao")):
+        errors.append("informe o valor da avaliação no formato 0,00")
     try:
         if not 1 <= int(form.get("limite_atraso", "0")) <= 180:
             raise ValueError
@@ -71,11 +112,28 @@ def _validate(form):
         errors.append("o limite de atraso deve estar entre 1 e 180 minutos")
     if len(form.get("procedimentos", "").strip()) < 3:
         errors.append("descreva os procedimentos odontológicos")
+    for field, label in (("nome_contratante", "nome do contratante"), ("nome_paciente", "nome do paciente")):
+        value = form.get(field, "").strip()
+        if not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ' -]{5,120}", value) or " " not in value:
+            errors.append(f"informe o {label} completo")
+    if not re.fullmatch(r"\d{1,6}[A-Za-z]?", form.get("numero", "").strip()):
+        errors.append("informe um número de endereço válido")
+    if not re.fullmatch(r"CRO-[A-Z]{2}\s\d{3,8}", form.get("cro", "").strip().upper()):
+        errors.append("informe o CRO no formato CRO-UF 12345")
+    for field, label in (("cidade_contratante", "cidade do contratante"), ("cidade_clinica", "cidade da clínica")):
+        if not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ .'-]{2,70}/[A-Za-z]{2}", form.get(field, "").strip()):
+            errors.append(f"informe a {label} no formato Cidade/UF")
+    try:
+        datetime.strptime(form.get("data_contrato", ""), "%d/%m/%Y")
+    except ValueError:
+        errors.append("informe uma data válida no formato DD/MM/AAAA")
     return errors
 
 
 def _safe_form(form):
-    return {field: form.get(field, "").strip() for field in FORM_FIELDS}
+    cleaned = {field: form.get(field, "").strip()[:FIELD_LIMITS[field]] for field in FORM_FIELDS}
+    cleaned["cro"] = cleaned["cro"].upper()
+    return cleaned
 
 
 def _download(form):
