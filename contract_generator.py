@@ -134,11 +134,15 @@ def _insert_patient_signature(document, data_url):
         raise ValueError("A assinatura manuscrita ultrapassa o tamanho permitido.")
     for paragraph in document.paragraphs:
         if "CONTRATANTE / PACIENTE" in paragraph.text:
-            signature = paragraph.insert_paragraph_before()
-            signature.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            signature.paragraph_format.space_after = 0
-            signature.add_run().add_picture(BytesIO(raw), width=Cm(4.2))
-            return
+            signature_run = paragraph.add_run()
+            signature_run.add_picture(BytesIO(raw), width=Cm(5.0))
+            signature_run.add_break()
+            paragraph._p.remove(signature_run._r)
+            paragraph._p.insert(0, signature_run._r)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.paragraph_format.keep_together = True
+            return True
+    raise ValueError("O campo de assinatura do paciente não foi encontrado no contrato-base.")
 
 
 def generate_contract_docx(form, template_source, image_source=None):
