@@ -141,9 +141,14 @@ document.getElementById('sendWhatsapp').addEventListener('click', async () => {
   phoneError.textContent = '';
   if (!normalized) { phoneError.textContent = 'Informe um telefone brasileiro válido com DDD.'; phoneInput.focus(); return; }
   if (!message || !message.includes(currentContract.url)) { document.getElementById('sendStatus').textContent = 'Mantenha o link de assinatura na mensagem antes de enviar.'; return; }
-  const popup = window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-  if (!popup) { document.getElementById('sendStatus').textContent = 'O navegador bloqueou a nova janela. Permita pop-ups e tente novamente.'; return; }
-  try { await fetch(`/api/contracts/${currentContract.id}/sent`, { method: 'POST', headers: { 'X-CSRF-Token': document.getElementById('csrfToken').value } }); } catch { /* O WhatsApp já foi aberto; o registro pode ser tentado novamente. */ }
+  const whatsappLink = document.createElement('a');
+  whatsappLink.href = `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+  whatsappLink.target = '_blank'; whatsappLink.rel = 'noopener noreferrer';
+  document.body.appendChild(whatsappLink); whatsappLink.click(); whatsappLink.remove();
+  try {
+    const response = await fetch(`/api/contracts/${currentContract.id}/sent`, { method: 'POST', headers: { 'X-CSRF-Token': document.getElementById('csrfToken').value } });
+    if (!response.ok) throw new Error('history-update-failed');
+  } catch { document.getElementById('sendStatus').textContent = 'O WhatsApp foi aberto, mas o histórico de envio não pôde ser atualizado.'; }
 });
 
 document.getElementById('closeModal').addEventListener('click', closeModal);
