@@ -512,8 +512,13 @@ def _appointment_update_events(old_row, old_data, new_data, actor, timestamp):
     if any(old_data.get(field, "") != new_data.get(field, "") for field in comparison_fields):
         events.append({"event_type": "ATUALIZADO", "actor": actor,
                        "description": "Dados do agendamento atualizados", "created_at": timestamp})
-    return events or [{"event_type": "ATUALIZADO", "actor": actor,
-                       "description": "Agendamento salvo sem alteração de dados", "created_at": timestamp}]
+    if not events:
+        events = [{"event_type": "ATUALIZADO", "actor": actor,
+                   "description": "Agendamento salvo sem alteração de dados", "created_at": timestamp}]
+    base_time = _parse_iso(timestamp)
+    for position, event in enumerate(events):
+        event["created_at"] = _iso(base_time + timedelta(microseconds=position))
+    return events
 
 
 @app.context_processor

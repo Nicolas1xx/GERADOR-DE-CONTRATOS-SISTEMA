@@ -370,6 +370,8 @@ def test_appointment_edit_status_cancel_history_and_persistence():
     assert (row["appointment_date"], row["appointment_time"], row["status"]) == ("2026-08-21", "15:30", "CONFIRMADO")
     events = application.store.appointment_events(appointment_id)
     assert {event["event_type"] for event in events} >= {"CRIADO", "HORARIO_ALTERADO", "CONFIRMADO", "ATUALIZADO"}
+    event_types = [event["event_type"] for event in events]
+    assert event_types.index("HORARIO_ALTERADO") < event_types.index("CONFIRMADO") < event_types.index("ATUALIZADO")
     assert any("14:00" in event["description"] and "15:30" in event["description"] for event in events)
 
     status_page = admin.get(f"/agendamentos/{appointment_id}")
@@ -384,6 +386,7 @@ def test_appointment_edit_status_cancel_history_and_persistence():
     assert application.store.get_appointment(appointment_id) is not None
     history = admin.get(f"/agendamentos/{appointment_id}").get_data(as_text=True)
     assert "Horário alterado" in history and "Atendimento concluído" in history and "Agendamento cancelado" in history
+    assert "Enviar confirmação pelo WhatsApp" not in history
 
     logout_page = admin.get("/")
     admin.post("/logout", data={"csrf_token": csrf_from(logout_page)})
