@@ -1,0 +1,21 @@
+<header class="admin-header">
+  <div class="header-inner">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="brand-logo"><img src="{{ url_for('logo') }}" alt="Logo do Consultório Odontológico Dr. Ângelo G. Martinez"></span>
+      <span class="brand-copy"><b>Gerador de Contratos</b><small>Dr. Ângelo G. Martinez</small></span>
+    </a>
+    <nav class="admin-nav" aria-label="Navegação administrativa">
+      <a href="{{ url_for('index') }}"{% if request.endpoint in ('index', 'gerar') %} aria-current="page"{% endif %}>Novo contrato</a>
+      <a href="{{ url_for('tracking') }}"{% if request.endpoint in ('tracking', 'contract_history') %} aria-current="page"{% endif %}>Acompanhamento</a>
+      <a href="{{ url_for('appointments') }}"{% if request.endpoint in ('appointments', 'appointment_detail') %} aria-current="page"{% endif %}>Agendamentos</a>
+      <a href="{{ url_for('privacy') }}">Privacidade</a>
+    </nav>
+    <div class="admin-actions">
+      <span class="session-label">Dr. Ângelo G. Martinez</span>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="text-button" type="submit">Sair</button>
+      </form>
+    </div>
+  </div>
+</header>

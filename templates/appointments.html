@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Agendamentos | Gerador de Contratos{% endblock %}
+{% block body_class %}admin-page appointments-page{% endblock %}
+{% block body %}
+{% include "_admin_header.html" %}
+<main class="appointments-shell">
+  <section class="appointments-intro"><div><span class="eyebrow">Agenda do consultório</span><h1>Agendamentos</h1><p>Organize e acompanhe os atendimentos dos pacientes.</p></div><button class="button primary" type="button" data-open-modal="newAppointmentModal">+ Novo agendamento</button></section>
+  {% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<div class="alert {{ category }}" role="alert">{{ message }}</div>{% endfor %}{% endwith %}
+
+  <section class="appointment-indicators" aria-label="Indicadores de hoje">
+    <div><span>Hoje</span><b>{{ indicators.today }}</b><small>atendimento(s)</small></div>
+    <div class="confirmed"><span>Confirmados</span><b>{{ indicators.confirmed }}</b><small>para hoje</small></div>
+    <div class="waiting"><span>Aguardando</span><b>{{ indicators.waiting }}</b><small>para hoje</small></div>
+    <div class="completed"><span>Concluídos</span><b>{{ indicators.completed }}</b><small>hoje</small></div>
+  </section>
+
+  <section class="today-panel"><div class="panel-heading"><div><span class="eyebrow">Prioridade do dia</span><h2>Agendamentos de hoje</h2></div><span>{{ today_appointments|length }} registro(s)</span></div>
+    {% if today_appointments %}<div class="today-list">{% for appointment in today_appointments %}<a href="{{ url_for('appointment_detail', appointment_id=appointment.id) }}"><time>{{ appointment.appointment_time }}</time><span><b>{{ appointment.patient_name }}</b><small>{{ appointment.appointment_type_name }} · {{ appointment.professional }}</small></span><span class="appointment-badge {{ appointment.status|lower }}">{{ appointment.status_label }}</span></a>{% endfor %}</div>{% else %}<p class="quiet-empty">Nenhum atendimento agendado para hoje.</p>{% endif %}
+  </section>
+
+  <form class="appointment-filters" method="get" action="{{ url_for('appointments') }}">
+    <input type="hidden" name="visao" value="{{ view }}"><input type="hidden" name="data" value="{{ reference.isoformat() }}">
+    <div class="appointment-search"><label for="appointment-q">Paciente, CPF ou telefone</label><input id="appointment-q" name="q" value="{{ filters.q }}" maxlength="120" placeholder="Digite os dados para pesquisar"></div>
+    <div><label for="appointment-period">Período</label><select id="appointment-period" name="periodo"><option value="">Período da visualização</option><option value="today"{% if filters.periodo=='today' %} selected{% endif %}>Hoje</option><option value="tomorrow"{% if filters.periodo=='tomorrow' %} selected{% endif %}>Amanhã</option><option value="week"{% if filters.periodo=='week' %} selected{% endif %}>Esta semana</option><option value="month"{% if filters.periodo=='month' %} selected{% endif %}>Este mês</option><option value="custom"{% if filters.periodo=='custom' %} selected{% endif %}>Data personalizada</option></select></div>
+    <div><label for="appointment-professional">Profissional</label><select id="appointment-professional" name="profissional"><option value="">Todos</option>{% for professional in professionals %}<option value="{{ professional }}"{% if filters.profissional==professional %} selected{% endif %}>{{ professional }}</option>{% endfor %}</select></div>
+    <div><label for="appointment-type">Tipo</label><select id="appointment-type" name="tipo"><option value="">Todos</option>{% for type in appointment_types %}<option value="{{ type.id }}"{% if filters.tipo==type.id %} selected{% endif %}>{{ type.name }}</option>{% endfor %}</select></div>
+    <div><label for="appointment-status">Status</label><select id="appointment-status" name="status"><option value="">Todos</option>{% for value,label in appointment_status_labels.items() %}<option value="{{ value }}"{% if filters.status==value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="custom-period" data-custom-period{% if filters.periodo!='custom' %} hidden{% endif %}><label for="appointment-from">De</label><input id="appointment-from" type="date" name="data_de" value="{{ filters.data_de }}"></div>
+    <div class="custom-period" data-custom-period{% if filters.periodo!='custom' %} hidden{% endif %}><label for="appointment-until">Até</label><input id="appointment-until" type="date" name="data_ate" value="{{ filters.data_ate }}"></div>
+    <div class="appointment-filter-actions"><button class="button primary" type="submit">Aplicar filtros</button><a class="button secondary" href="{{ url_for('appointments', visao=view) }}">Limpar filtros</a></div>
+  </form>
+
+  <section class="agenda-panel">
+    <div class="agenda-toolbar"><div class="view-tabs" role="navigation" aria-label="Visualização da agenda"><a href="{{ url_for('appointments', visao='day', data=reference.isoformat()) }}"{% if view=='day' %} aria-current="page"{% endif %}>Dia</a><a href="{{ url_for('appointments', visao='week', data=reference.isoformat()) }}"{% if view=='week' %} aria-current="page"{% endif %}>Semana</a><a href="{{ url_for('appointments', visao='month', data=reference.isoformat()) }}"{% if view=='month' %} aria-current="page"{% endif %}>Mês</a><a href="{{ url_for('appointments', visao='list', data=reference.isoformat()) }}"{% if view=='list' %} aria-current="page"{% endif %}>Lista</a></div><div class="period-navigation"><a href="{{ previous_url }}" aria-label="Período anterior">←</a><a href="{{ today_url }}">Hoje</a><strong>{{ period_label }}</strong><a href="{{ next_url }}" aria-label="Próximo período">→</a></div></div>
+
+    {% if view == 'month' %}<div class="month-calendar"><div class="calendar-weekdays">{% for weekday in ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'] %}<span>{{ weekday }}</span>{% endfor %}</div>{% for week in calendar_weeks %}<div class="calendar-week">{% for day in week %}<div class="calendar-day{% if not day.in_month %} outside{% endif %}{% if day.is_today %} today{% endif %}"><div class="calendar-day-number"><span>{{ day.date.day }}</span>{% if day.is_today %}<small>Hoje</small>{% endif %}</div><div class="calendar-events">{% for appointment in day.appointments[:4] %}<a class="calendar-event {{ appointment.status|lower }}" href="{{ url_for('appointment_detail', appointment_id=appointment.id) }}"><time>{{ appointment.appointment_time }}</time><span>{{ appointment.patient_name }}</span></a>{% endfor %}{% if day.appointments|length > 4 %}<small>+ {{ day.appointments|length - 4 }} atendimento(s)</small>{% endif %}</div></div>{% endfor %}</div>{% endfor %}</div>{% endif %}
+
+    {% if view == 'week' %}<div class="week-calendar">{% for day in week_days %}<section><header><b>{{ day.date.strftime('%d/%m') }}</b><span>{{ ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][day.date.weekday()] }}</span></header>{% if day.appointments %}{% for appointment in day.appointments %}<a class="week-event" href="{{ url_for('appointment_detail', appointment_id=appointment.id) }}"><time>{{ appointment.appointment_time }}</time><b>{{ appointment.patient_name }}</b><span class="appointment-badge {{ appointment.status|lower }}">{{ appointment.status_label }}</span></a>{% endfor %}{% else %}<small class="no-events">Sem atendimentos</small>{% endif %}</section>{% endfor %}</div>{% endif %}
+
+    {% if view in ('day','list') %}<div class="appointment-list"><div class="appointment-list-head"><span>Horário</span><span>Paciente</span><span>Telefone</span><span>Atendimento</span><span>Profissional</span><span>Status</span><span>Ações</span></div>{% for appointment in appointments %}<article><time data-label="Horário">{{ appointment.appointment_time }}</time><strong data-label="Paciente">{{ appointment.patient_name }}</strong><span data-label="Telefone">{{ appointment.phone }}</span><span data-label="Atendimento">{{ appointment.appointment_type_name }}</span><span data-label="Profissional">{{ appointment.professional }}</span><span data-label="Status"><span class="appointment-badge {{ appointment.status|lower }}">{{ appointment.status_label }}</span></span><span data-label="Ações"><a class="history-link" href="{{ url_for('appointment_detail', appointment_id=appointment.id) }}">Abrir detalhes</a></span></article>{% else %}<div class="empty-state"><span>○</span><h3>Nenhum agendamento encontrado</h3><p>Ajuste os filtros ou cadastre um novo atendimento.</p></div>{% endfor %}</div>{% endif %}
+  </section>
+</main>
+
+<div class="modal-backdrop appointment-modal-backdrop" id="newAppointmentModal" hidden><section class="appointment-modal" role="dialog" aria-modal="true" aria-labelledby="newAppointmentTitle"><button class="modal-close" type="button" data-close-modal aria-label="Fechar">×</button><span class="eyebrow">Novo atendimento</span><h2 id="newAppointmentTitle">Novo agendamento</h2><p>Preencha os dados do paciente e escolha um horário disponível.</p>
+  <form method="post" action="{{ url_for('create_appointment') }}" class="appointment-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field span-2"><label for="new-patient-name">Nome completo do paciente *</label><input id="new-patient-name" name="patient_name" maxlength="120" required></div>
+    <div class="field"><label for="new-cpf">CPF *</label><input id="new-cpf" name="cpf" inputmode="numeric" maxlength="14" data-appointment-mask="cpf" placeholder="000.000.000-00" required></div>
+    <div class="field"><label for="new-phone">Telefone / WhatsApp *</label><input id="new-phone" name="phone" type="tel" inputmode="numeric" maxlength="19" data-appointment-mask="phone" placeholder="(15) 99999-9999" required></div>
+    <div class="field span-2"><label for="new-email">E-mail</label><input id="new-email" name="email" type="email" maxlength="150"></div>
+    <div class="field"><label for="new-date">Data do atendimento *</label><input id="new-date" name="appointment_date" type="date" value="{{ default_appointment.appointment_date }}" required></div>
+    <div class="field"><label for="new-time">Horário *</label><input id="new-time" name="appointment_time" type="time" value="{{ default_appointment.appointment_time }}" required></div>
+    <div class="field"><label for="new-type">Tipo de atendimento *</label><select id="new-type" name="appointment_type_id" required><option value="">Selecione</option>{% for type in appointment_types %}<option value="{{ type.id }}">{{ type.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="new-professional">Profissional responsável *</label><input id="new-professional" name="professional" maxlength="120" value="{{ default_appointment.professional }}" required></div>
+    <div class="field span-2"><label for="new-observations">Observações</label><textarea id="new-observations" name="observations" maxlength="1500" rows="4"></textarea></div>
+    <div class="field span-2"><label for="new-status">Status *</label><select id="new-status" name="status" required>{% for value,label in appointment_status_labels.items() %}<option value="{{ value }}"{% if default_appointment.status==value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="appointment-form-actions span-2"><button class="button secondary" type="button" data-close-modal>Cancelar</button><button class="button primary" type="submit">Salvar agendamento</button></div>
+  </form></section></div>
+<footer class="admin-footer wide"><span>Consultório Odontológico Dr. Ângelo G. Martinez</span><a href="{{ url_for('privacy') }}">Política de Privacidade</a></footer>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='appointments.js', v='20260818a') }}" defer></script>{% endblock %}

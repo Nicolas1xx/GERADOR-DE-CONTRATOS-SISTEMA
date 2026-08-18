@@ -5,9 +5,11 @@ import json
 import os
 import re
 import secrets
+import unicodedata
 import uuid
 import zlib
-from datetime import datetime, timedelta, timezone
+from calendar import Calendar
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -18,7 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 
 from contract_generator import PLACEHOLDERS, default_contract_form, generate_contract_docx
-from storage import ContractStore
+from storage import AppointmentConflictError, ContractStore
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,14 +38,30 @@ FIELD_LIMITS = {field: 180 for field in FORM_FIELDS} | {
     "valor_total": 25, "valor_avaliacao": 25, "limite_atraso": 3,
 }
 STATUS_LABELS = {
-    "AGUARDANDO": "Aguardando assinatura", "VISUALIZADO": "Visualizado",
-    "ASSINADO": "Assinado", "EXPIRADO": "Expirado",
+    "AGUARDANDO": "Aguardando envio", "ENVIADO": "Enviado",
+    "VISUALIZADO": "Visualizado", "ASSINADO": "Assinado", "EXPIRADO": "Expirado",
 }
 EVENT_LABELS = {
-    "CRIADO": "Criado", "ENVIADO": "Envio pelo WhatsApp iniciado",
-    "VISUALIZADO": "Visualizado pelo paciente", "ASSINADO": "Assinado",
-    "EXPIRADO": "Expirado",
+    "CRIADO": "Contrato criado", "ENVIADO": "Link enviado",
+    "VISUALIZADO": "Paciente visualizou", "ASSINADO": "Contrato assinado",
+    "EXPIRADO": "Contrato expirado",
 }
+APPOINTMENT_STATUS_LABELS = {
+    "AGENDADO": "Agendado", "CONFIRMADO": "Confirmado", "AGUARDANDO": "Aguardando",
+    "EM_ATENDIMENTO": "Em atendimento", "CONCLUIDO": "Concluído",
+    "CANCELADO": "Cancelado", "FALTOU": "Faltou",
+}
+APPOINTMENT_EVENT_LABELS = {
+    "CRIADO": "Agendamento criado", "ATUALIZADO": "Dados atualizados",
+    "HORARIO_ALTERADO": "Horário alterado", "STATUS_ALTERADO": "Status alterado",
+    "CONFIRMADO": "Agendamento confirmado", "CONCLUIDO": "Atendimento concluído",
+    "CANCELADO": "Agendamento cancelado", "CONFIRMACAO_ENVIADA": "Confirmação preparada",
+}
+APPOINTMENT_FIELD_LIMITS = {
+    "patient_name": 120, "cpf": 14, "phone": 19, "email": 150,
+    "professional": 120, "observations": 1500,
+}
+ADMIN_DISPLAY_NAME = os.environ.get("ADMIN_DISPLAY_NAME", "Dr. Ângelo G. Martinez").strip() or "Dr. Ângelo G. Martinez"
 
 
 def _secret(name, development_fallback):
@@ -94,6 +112,32 @@ def _parse_iso(value):
 def _display_date(value, include_time=False):
     local = _parse_iso(value).astimezone(BRAZIL_TZ)
     return local.strftime("%d/%m/%Y às %H:%M" if include_time else "%d/%m/%Y")
+
+
+def _display_optional(value, include_time=True):
+    return _display_date(value, include_time) if value else "—"
+
+
+def _masked_cpf(value):
+    digits = re.sub(r"\D", "", value or "")
+    return f"***.***.***-{digits[-2:]}" if len(digits) == 11 else "—"
+
+
+def _audit_actor():
+    return ADMIN_DISPLAY_NAME
+
+
+def _display_actor(actor):
+    technical_names = {"admin", "admin-consultorio", _admin_username().casefold()}
+    return ADMIN_DISPLAY_NAME if (actor or "").casefold() in technical_names else (actor or ADMIN_DISPLAY_NAME)
+
+
+def _tracking_identity(row):
+    try:
+        form = _decrypt_form(row["data_ciphertext"])
+        return form.get("nome_paciente") or "Paciente não informado", _masked_cpf(form.get("cpf_contratante"))
+    except (InvalidToken, ValueError, json.JSONDecodeError):
+        return "Dados indisponíveis", "—"
 
 
 def _valid_cpf(value):
@@ -285,9 +329,197 @@ def _password_is_valid(password):
     return bool(password_hash) and check_password_hash(password_hash, password)
 
 
+def _tracking_item(row, include_events=False):
+    patient, cpf = _tracking_identity(row)
+    events = store.events_for(row["id"])
+    sent_at = next((event["created_at"] for event in events if event["event_type"] == "ENVIADO"), None)
+    item = {
+        "id": row["id"], "number": row["contract_number"], "patient": patient, "cpf": cpf,
+        "status": row["status"], "created_by": _display_actor(row["created_by"]),
+        "created_at": _display_date(row["created_at"], True),
+        "expires_at": _display_date(row["expires_at"], True),
+        "sent_at": _display_optional(sent_at),
+        "viewed_at": _display_optional(row.get("first_viewed_at")),
+        "signed_at": _display_optional(row.get("signed_at")),
+        "is_signed": bool(row.get("signed_at")), "is_expired": row["status"] == "EXPIRADO",
+    }
+    if include_events:
+        item["events"] = [{**event, "actor": _display_actor(event["actor"]),
+                           "label": EVENT_LABELS.get(event["event_type"], event["event_type"]),
+                           "display_date": _display_date(event["created_at"], True)} for event in events]
+    return item
+
+
+def _filter_date(value, end=False):
+    if not value:
+        return None
+    parsed = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=BRAZIL_TZ)
+    if end:
+        parsed += timedelta(days=1)
+    return _iso(parsed.astimezone(timezone.utc))
+
+
+def _normalize_search(value):
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_text = "".join(character for character in normalized if not unicodedata.combining(character))
+    return " ".join(ascii_text.casefold().split())
+
+
+def _appointment_blind_token(kind, value):
+    message = f"appointment:{kind}:{value}".encode("utf-8")
+    return hmac.new(DATA_SECRET.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _professional_key(value):
+    return _appointment_blind_token("professional", _normalize_search(value))
+
+
+def _appointment_search_tokens(data):
+    tokens = {_appointment_blind_token("name", word)
+              for word in _normalize_search(data.get("patient_name", "")).split() if len(word) > 1}
+    for field in ("cpf", "phone"):
+        digits = re.sub(r"\D", "", data.get(field, ""))
+        if digits:
+            tokens.add(_appointment_blind_token("digits", digits))
+    return tokens
+
+
+def _appointment_query_tokens(value):
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) >= 8:
+        return [_appointment_blind_token("digits", digits)]
+    words = [word for word in _normalize_search(value).split() if len(word) > 1]
+    return [_appointment_blind_token("name", word) for word in words]
+
+
+def _encrypt_appointment(data):
+    raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return data_cipher.encrypt(raw).decode("ascii")
+
+
+def _decrypt_appointment(ciphertext):
+    raw = data_cipher.decrypt(ciphertext.encode("ascii"))
+    data = json.loads(raw.decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Dados de agendamento inválidos")
+    return data
+
+
+def _validate_appointment(form):
+    raw_fields = {key: (form.get(key, "") or "").strip()
+                  for key in APPOINTMENT_FIELD_LIMITS}
+    fields = {key: value[:APPOINTMENT_FIELD_LIMITS[key]] for key, value in raw_fields.items()}
+    fields.update({
+        "appointment_date": (form.get("appointment_date", "") or "").strip(),
+        "appointment_time": (form.get("appointment_time", "") or "").strip(),
+        "appointment_type_id": (form.get("appointment_type_id", "") or "").strip(),
+        "status": (form.get("status", "AGENDADO") or "").strip().upper(),
+    })
+    errors = {}
+    for key, value in raw_fields.items():
+        if len(value) > APPOINTMENT_FIELD_LIMITS[key]:
+            errors[key] = f"Este campo deve ter no máximo {APPOINTMENT_FIELD_LIMITS[key]} caracteres."
+    required = {"patient_name": "nome completo do paciente", "cpf": "CPF", "phone": "telefone",
+                "appointment_date": "data do atendimento", "appointment_time": "horário",
+                "appointment_type_id": "tipo de atendimento", "professional": "profissional responsável",
+                "status": "status"}
+    for key, label in required.items():
+        if not fields.get(key):
+            errors[key] = f"Informe {label}."
+    name = fields["patient_name"]
+    if name and (not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ' -]{5,120}", name) or " " not in name):
+        errors["patient_name"] = "Informe o nome completo do paciente."
+    if fields["cpf"] and not _valid_cpf(fields["cpf"]):
+        errors["cpf"] = "Informe um CPF válido."
+    if fields["phone"] and not _normalize_phone(fields["phone"]):
+        errors["phone"] = "Informe um telefone válido com DDD."
+    if fields["email"] and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", fields["email"]):
+        errors["email"] = "Informe um e-mail válido."
+    try:
+        date.fromisoformat(fields["appointment_date"])
+    except ValueError:
+        errors["appointment_date"] = "Informe uma data válida."
+    try:
+        datetime.strptime(fields["appointment_time"], "%H:%M")
+    except ValueError:
+        errors["appointment_time"] = "Informe um horário válido."
+    type_ids = {item["id"] for item in store.appointment_types()}
+    if fields["appointment_type_id"] and fields["appointment_type_id"] not in type_ids:
+        errors["appointment_type_id"] = "Selecione um tipo de atendimento válido."
+    if fields["status"] not in APPOINTMENT_STATUS_LABELS:
+        errors["status"] = "Selecione um status válido."
+    if fields["professional"] and not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ.' -]{3,120}", fields["professional"]):
+        errors["professional"] = "Informe o profissional responsável."
+    fields["cpf"] = re.sub(r"\D", "", fields["cpf"])
+    fields["phone"] = _format_phone(fields["phone"])
+    return fields, errors
+
+
+def _appointment_item(row, include_events=False):
+    try:
+        data = _decrypt_appointment(row["data_ciphertext"])
+    except (InvalidToken, ValueError, json.JSONDecodeError):
+        data = {"patient_name": "Dados indisponíveis", "cpf": "", "phone": "", "email": "",
+                "observations": ""}
+    appointment_date = date.fromisoformat(row["appointment_date"])
+    item = {
+        **data, "id": row["id"], "appointment_date": row["appointment_date"],
+        "appointment_date_display": appointment_date.strftime("%d/%m/%Y"),
+        "appointment_time": row["appointment_time"], "appointment_type_id": row["appointment_type_id"],
+        "appointment_type_name": row["appointment_type_name"], "professional": row["professional"],
+        "status": row["status"], "status_label": APPOINTMENT_STATUS_LABELS[row["status"]],
+        "created_by": _display_actor(row["created_by"]), "created_at": _display_date(row["created_at"], True),
+        "updated_at": _display_date(row["updated_at"], True), "phone_whatsapp": _normalize_phone(data.get("phone")),
+        "cpf_masked": _masked_cpf(data.get("cpf")),
+    }
+    if include_events:
+        item["events"] = [{**event, "actor": _display_actor(event["actor"]),
+                           "label": APPOINTMENT_EVENT_LABELS.get(event["event_type"], event["event_type"]),
+                           "display_date": _display_date(event["created_at"], True)}
+                          for event in store.appointment_events(row["id"])]
+    return item
+
+
+def _agenda_bounds(view, reference):
+    if view == "day":
+        return reference, reference + timedelta(days=1)
+    if view == "week":
+        start = reference - timedelta(days=reference.weekday())
+        return start, start + timedelta(days=7)
+    if view == "month":
+        start = reference.replace(day=1)
+        next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return start, next_month
+    return reference, reference + timedelta(days=1)
+
+
+def _appointment_update_events(old_row, old_data, new_data, actor, timestamp):
+    events = []
+    old_date, old_time = old_row["appointment_date"], old_row["appointment_time"]
+    if (old_date, old_time) != (new_data["appointment_date"], new_data["appointment_time"]):
+        before = f"{date.fromisoformat(old_date):%d/%m/%Y} às {old_time}"
+        after = f"{date.fromisoformat(new_data['appointment_date']):%d/%m/%Y} às {new_data['appointment_time']}"
+        events.append({"event_type": "HORARIO_ALTERADO", "actor": actor,
+                       "description": f"Horário alterado de {before} para {after}", "created_at": timestamp})
+    if old_row["status"] != new_data["status"]:
+        event_type = {"CONFIRMADO": "CONFIRMADO", "CONCLUIDO": "CONCLUIDO",
+                      "CANCELADO": "CANCELADO"}.get(new_data["status"], "STATUS_ALTERADO")
+        description = f"Status alterado de {APPOINTMENT_STATUS_LABELS[old_row['status']]} para {APPOINTMENT_STATUS_LABELS[new_data['status']]}"
+        events.append({"event_type": event_type, "actor": actor,
+                       "description": description, "created_at": timestamp})
+    comparison_fields = ("patient_name", "cpf", "phone", "email", "professional",
+                         "observations", "appointment_type_id")
+    if any(old_data.get(field, "") != new_data.get(field, "") for field in comparison_fields):
+        events.append({"event_type": "ATUALIZADO", "actor": actor,
+                       "description": "Dados do agendamento atualizados", "created_at": timestamp})
+    return events or [{"event_type": "ATUALIZADO", "actor": actor,
+                       "description": "Agendamento salvo sem alteração de dados", "created_at": timestamp}]
+
+
 @app.context_processor
 def template_helpers():
-    return {"csrf_token": _csrf_token, "status_labels": STATUS_LABELS, "event_labels": EVENT_LABELS}
+    return {"csrf_token": _csrf_token, "status_labels": STATUS_LABELS, "event_labels": EVENT_LABELS,
+            "appointment_status_labels": APPOINTMENT_STATUS_LABELS}
 
 
 @app.after_request
@@ -338,24 +570,290 @@ def logout():
 @app.get("/")
 @login_required
 def index():
-    now = _now()
-    contracts = []
-    for row in store.list_recent(40):
-        if row["status"] != "ASSINADO" and _parse_iso(row["expires_at"]) <= now:
-            store.mark_expired(row["id"], _iso(now))
-            row["status"] = "EXPIRADO"
+    return render_template("index.html", valores=default_contract_form())
+
+
+@app.get("/acompanhamento")
+@login_required
+def tracking():
+    store.expire_due(_iso(_now()))
+    query = request.args.get("q", "").strip()[:120]
+    status = request.args.get("status", "").strip().upper()
+    date_from = request.args.get("data_de", "").strip()
+    date_to = request.args.get("data_ate", "").strip()
+    if status not in STATUS_LABELS:
+        status = ""
+    filter_error = None
+    try:
+        created_from = _filter_date(date_from)
+        created_until = _filter_date(date_to, end=True)
+        if created_from and created_until and created_from >= created_until:
+            raise ValueError
+    except ValueError:
+        created_from = created_until = None
+        filter_error = "Informe um período válido para a pesquisa."
+    rows = store.list_filtered(status or None, created_from, created_until)
+    normalized_query = query.casefold()
+    filtered_rows = []
+    for row in rows:
+        patient, _ = _tracking_identity(row)
+        if normalized_query and normalized_query not in patient.casefold() \
+                and normalized_query not in row["contract_number"].casefold():
+            continue
+        filtered_rows.append(row)
+    try:
+        page = max(1, int(request.args.get("pagina", "1")))
+    except ValueError:
+        page = 1
+    per_page = 20
+    total = len(filtered_rows)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    page_rows = filtered_rows[(page - 1) * per_page:page * per_page]
+    contracts = [_tracking_item(row) for row in page_rows]
+    base_params = {"q": query, "status": status, "data_de": date_from, "data_ate": date_to}
+    previous_url = url_for("tracking", **base_params, pagina=page - 1) if page > 1 else None
+    next_url = url_for("tracking", **base_params, pagina=page + 1) if page < total_pages else None
+    return render_template("acompanhamento.html", contracts=contracts, total=total, page=page,
+                           total_pages=total_pages, previous_url=previous_url, next_url=next_url,
+                           filters=base_params, filter_error=filter_error)
+
+
+@app.get("/acompanhamento/<contract_id>")
+@login_required
+def contract_history(contract_id):
+    try:
+        uuid.UUID(contract_id)
+    except ValueError:
+        abort(404)
+    store.expire_due(_iso(_now()))
+    row = store.get_by_id(contract_id)
+    if not row:
+        abort(404)
+    return render_template("contract_detail.html", contract=_tracking_item(row, include_events=True))
+
+
+@app.get("/agendamentos")
+@login_required
+def appointments():
+    today = _now().astimezone(BRAZIL_TZ).date()
+    view = request.args.get("visao", "month").strip().lower()
+    if view not in {"day", "week", "month", "list"}:
+        view = "month"
+    try:
+        reference = date.fromisoformat(request.args.get("data", ""))
+    except ValueError:
+        reference = today
+    period = request.args.get("periodo", "").strip().lower()
+    start, end = _agenda_bounds("day" if view == "list" else view, reference)
+    if period == "today":
+        start, end = today, today + timedelta(days=1)
+    elif period == "tomorrow":
+        start, end = today + timedelta(days=1), today + timedelta(days=2)
+    elif period == "week":
+        start, end = _agenda_bounds("week", today)
+    elif period == "month":
+        start, end = _agenda_bounds("month", today)
+    elif period == "custom":
         try:
-            patient = _decrypt_form(row["data_ciphertext"]).get("nome_paciente", "Paciente")
-        except (InvalidToken, ValueError, json.JSONDecodeError):
-            patient = "Dados indisponíveis"
-        contracts.append({
-            "id": row["id"], "number": row["contract_number"], "patient": patient,
-            "status": row["status"], "created_at": _display_date(row["created_at"], True),
-            "expires_at": _display_date(row["expires_at"]), "created_by": row["created_by"],
-            "events": [{**event, "display_date": _display_date(event["created_at"], True)}
-                       for event in store.events_for(row["id"])],
-        })
-    return render_template("index.html", valores=default_contract_form(), contracts=contracts)
+            start = date.fromisoformat(request.args.get("data_de", ""))
+            custom_end = date.fromisoformat(request.args.get("data_ate", ""))
+            if custom_end < start:
+                raise ValueError
+            end = custom_end + timedelta(days=1)
+        except ValueError:
+            flash("Informe um período personalizado válido.", "erro")
+            start, end = _agenda_bounds("day" if view == "list" else view, reference)
+    status = request.args.get("status", "").strip().upper()
+    if status not in APPOINTMENT_STATUS_LABELS:
+        status = ""
+    type_id = request.args.get("tipo", "").strip()
+    type_ids = {item["id"] for item in store.appointment_types()}
+    if type_id not in type_ids:
+        type_id = ""
+    professional_name = request.args.get("profissional", "").strip()[:120]
+    professional = _professional_key(professional_name) if professional_name else None
+    query = request.args.get("q", "").strip()[:120]
+    query_tokens = _appointment_query_tokens(query) if query else None
+    rows = store.list_appointments(start.isoformat(), end.isoformat(), status or None,
+                                   professional, type_id or None, query_tokens)
+    items = [_appointment_item(row) for row in rows]
+
+    today_rows = store.list_appointments(today.isoformat(), (today + timedelta(days=1)).isoformat())
+    today_items = [_appointment_item(row) for row in today_rows]
+    indicators = {
+        "today": len(today_items),
+        "confirmed": sum(item["status"] == "CONFIRMADO" for item in today_items),
+        "waiting": sum(item["status"] == "AGUARDANDO" for item in today_items),
+        "completed": sum(item["status"] == "CONCLUIDO" for item in today_items),
+    }
+    by_date = {}
+    for item in items:
+        by_date.setdefault(item["appointment_date"], []).append(item)
+    calendar_weeks = []
+    if view == "month":
+        for week in Calendar(firstweekday=0).monthdatescalendar(reference.year, reference.month):
+            calendar_weeks.append([{"date": day, "date_iso": day.isoformat(),
+                                    "in_month": day.month == reference.month,
+                                    "is_today": day == today, "appointments": by_date.get(day.isoformat(), [])}
+                                   for day in week])
+    week_days = []
+    if view == "week":
+        week_start, _ = _agenda_bounds("week", reference)
+        week_days = [{"date": week_start + timedelta(days=index),
+                      "date_iso": (week_start + timedelta(days=index)).isoformat(),
+                      "appointments": by_date.get((week_start + timedelta(days=index)).isoformat(), [])}
+                     for index in range(7)]
+    if view == "month":
+        previous_reference = (reference.replace(day=1) - timedelta(days=1)).replace(day=1)
+        next_reference = (reference.replace(day=28) + timedelta(days=4)).replace(day=1)
+        period_label = reference.strftime("%m/%Y")
+    elif view == "week":
+        previous_reference, next_reference = reference - timedelta(days=7), reference + timedelta(days=7)
+        period_label = f"{start:%d/%m} a {(end - timedelta(days=1)):%d/%m/%Y}"
+    else:
+        previous_reference, next_reference = reference - timedelta(days=1), reference + timedelta(days=1)
+        period_label = reference.strftime("%d/%m/%Y")
+    nav_params = request.args.to_dict()
+    nav_params.pop("periodo", None)
+    nav_params.pop("data_de", None)
+    nav_params.pop("data_ate", None)
+    previous_url = url_for("appointments", **{**nav_params, "visao": view, "data": previous_reference.isoformat()})
+    next_url = url_for("appointments", **{**nav_params, "visao": view, "data": next_reference.isoformat()})
+    today_url = url_for("appointments", **{**nav_params, "visao": view, "data": today.isoformat()})
+    return render_template("appointments.html", appointments=items, today_appointments=today_items,
+                           indicators=indicators, view=view, reference=reference, period_label=period_label,
+                           calendar_weeks=calendar_weeks, week_days=week_days, today=today,
+                           appointment_types=store.appointment_types(), professionals=store.appointment_professionals(),
+                           previous_url=previous_url, next_url=next_url, today_url=today_url,
+                           filters={"q": query, "status": status, "tipo": type_id,
+                                    "profissional": professional_name, "periodo": period,
+                                    "data_de": request.args.get("data_de", ""),
+                                    "data_ate": request.args.get("data_ate", "")},
+                           default_appointment={"appointment_date": today.isoformat(), "appointment_time": "09:00",
+                                                "professional": "Dr. Ângelo G. Martinez", "status": "AGENDADO"})
+
+
+@app.post("/agendamentos/novo")
+@login_required
+def create_appointment():
+    limited = _rate_limit("create-appointment", 60, 60 * 60)
+    if limited:
+        return limited
+    _check_csrf()
+    data, errors = _validate_appointment(request.form)
+    if errors:
+        flash(next(iter(errors.values())), "erro")
+        return redirect(url_for("appointments"))
+    now = _iso(_now())
+    appointment_id = str(uuid.uuid4())
+    record = {
+        "id": appointment_id, "data_ciphertext": _encrypt_appointment(data),
+        "appointment_date": data["appointment_date"], "appointment_time": data["appointment_time"],
+        "appointment_type_id": data["appointment_type_id"], "professional": data["professional"],
+        "professional_key": _professional_key(data["professional"]), "status": data["status"],
+        "created_by": _audit_actor(), "created_at": now, "updated_at": now, "contract_id": None,
+    }
+    try:
+        store.create_appointment(record, _appointment_search_tokens(data))
+    except AppointmentConflictError:
+        flash("Este horário já possui um atendimento agendado para este profissional. Escolha outro horário.", "erro")
+        return redirect(url_for("appointments", visao="day", data=data["appointment_date"]))
+    flash("Agendamento criado com sucesso.", "sucesso")
+    return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+
+
+@app.get("/agendamentos/<appointment_id>")
+@login_required
+def appointment_detail(appointment_id):
+    try:
+        uuid.UUID(appointment_id)
+    except ValueError:
+        abort(404)
+    row = store.get_appointment(appointment_id)
+    if not row:
+        abort(404)
+    return render_template("appointment_detail.html", appointment=_appointment_item(row, include_events=True),
+                           appointment_types=store.appointment_types())
+
+
+@app.post("/agendamentos/<appointment_id>/editar")
+@login_required
+def edit_appointment(appointment_id):
+    limited = _rate_limit("edit-appointment", 120, 60 * 60)
+    if limited:
+        return limited
+    _check_csrf()
+    row = store.get_appointment(appointment_id)
+    if not row:
+        abort(404)
+    data, errors = _validate_appointment(request.form)
+    if errors:
+        flash(next(iter(errors.values())), "erro")
+        return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+    try:
+        old_data = _decrypt_appointment(row["data_ciphertext"])
+    except (InvalidToken, ValueError, json.JSONDecodeError):
+        abort(400, description="Os dados deste agendamento não puderam ser lidos.")
+    timestamp = _iso(_now())
+    record = {"data_ciphertext": _encrypt_appointment(data), "appointment_date": data["appointment_date"],
+              "appointment_time": data["appointment_time"], "appointment_type_id": data["appointment_type_id"],
+              "professional": data["professional"], "professional_key": _professional_key(data["professional"]),
+              "status": data["status"], "updated_at": timestamp}
+    events = _appointment_update_events(row, old_data, data, _audit_actor(), timestamp)
+    try:
+        store.update_appointment(appointment_id, record, _appointment_search_tokens(data), events)
+    except AppointmentConflictError:
+        flash("Este horário já possui um atendimento agendado para este profissional. Escolha outro horário.", "erro")
+        return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+    flash("Agendamento atualizado com sucesso.", "sucesso")
+    return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+
+
+@app.post("/agendamentos/<appointment_id>/status")
+@login_required
+def update_appointment_status(appointment_id):
+    limited = _rate_limit("appointment-status", 120, 60 * 60)
+    if limited:
+        return limited
+    _check_csrf()
+    row = store.get_appointment(appointment_id)
+    if not row:
+        abort(404)
+    new_status = request.form.get("status", "").strip().upper()
+    if new_status not in APPOINTMENT_STATUS_LABELS:
+        abort(400, description="Status de agendamento inválido.")
+    if row["status"] == new_status:
+        return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+    data = _decrypt_appointment(row["data_ciphertext"])
+    data["status"] = new_status
+    timestamp = _iso(_now())
+    record = {"data_ciphertext": _encrypt_appointment(data), "appointment_date": row["appointment_date"],
+              "appointment_time": row["appointment_time"], "appointment_type_id": row["appointment_type_id"],
+              "professional": row["professional"], "professional_key": row["professional_key"],
+              "status": new_status, "updated_at": timestamp}
+    events = _appointment_update_events(row, _decrypt_appointment(row["data_ciphertext"]), data,
+                                        _audit_actor(), timestamp)
+    try:
+        store.update_appointment(appointment_id, record, _appointment_search_tokens(data), events)
+    except AppointmentConflictError:
+        flash("Não é possível reativar este agendamento porque o horário já está ocupado.", "erro")
+        return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+    flash(f"Status alterado para {APPOINTMENT_STATUS_LABELS[new_status]}.", "sucesso")
+    return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+
+
+@app.post("/api/appointments/<appointment_id>/confirmation-sent")
+@login_required
+def appointment_confirmation_sent(appointment_id):
+    limited = _rate_limit("appointment-whatsapp", 120, 60 * 60)
+    if limited:
+        return limited
+    _check_csrf()
+    if not store.add_appointment_event(appointment_id, "CONFIRMACAO_ENVIADA", _audit_actor(),
+                                       "Confirmação preparada para envio pelo WhatsApp", _iso(_now())):
+        return jsonify({"erro": "Agendamento não encontrado."}), 404
+    return jsonify({"ok": True})
 
 
 @app.get("/logo")
@@ -370,13 +868,13 @@ def gerar():
     errors = _validate(request.form)
     if errors:
         flash("Revise os campos destacados antes de continuar.", "erro")
-        return render_template("index.html", valores=request.form, contracts=[], field_errors=errors), 400
+        return render_template("index.html", valores=request.form, field_errors=errors), 400
     try:
         return _download(_safe_form(request.form))
     except Exception:
         app.logger.exception("Falha ao gerar Word sem assinatura")
         flash("Não foi possível gerar o arquivo Word. Tente novamente.", "erro")
-        return render_template("index.html", valores=request.form, contracts=[]), 500
+        return render_template("index.html", valores=request.form), 500
 
 
 @app.post("/api/contracts")
@@ -398,7 +896,7 @@ def create_contract():
     store.create_contract({
         "id": contract_id, "contract_number": contract_number,
         "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-        "data_ciphertext": _encrypt_form(form), "created_by": session["admin_user"],
+        "data_ciphertext": _encrypt_form(form), "created_by": _audit_actor(),
         "created_at": _iso(now), "expires_at": _iso(expires), "status": "AGUARDANDO",
         "first_viewed_at": None, "signed_at": None,
     })
@@ -420,10 +918,13 @@ def create_contract():
 @login_required
 def mark_sent(contract_id):
     _check_csrf()
-    if not store.get_by_id(contract_id):
+    row = store.get_by_id(contract_id)
+    if not row:
         return jsonify({"erro": "Contrato não encontrado."}), 404
-    store.add_event(contract_id, "ENVIADO", session["admin_user"], _iso(_now()))
-    return jsonify({"ok": True})
+    changed = store.mark_sent(contract_id, _audit_actor(), _iso(_now()))
+    current = store.get_by_id(contract_id)
+    return jsonify({"ok": True, "alterado": changed, "status": current["status"],
+                    "status_label": STATUS_LABELS[current["status"]]})
 
 
 def _legacy_fernet(secret):
@@ -521,6 +1022,9 @@ def sign_contract(token):
         app.logger.exception("Falha ao gerar contrato assinado")
         return jsonify({"erro": "Não foi possível concluir a assinatura. Tente novamente."}), 500
     if row and not store.mark_signed(row["id"], _iso(_now())):
+        current = store.get_by_id(row["id"])
+        if current and current["status"] == "EXPIRADO":
+            return jsonify({"erro": "Este link expirou e não aceita mais assinaturas."}), 410
         return jsonify({"erro": "Este contrato já foi assinado e não aceita uma nova assinatura."}), 409
     return response
 

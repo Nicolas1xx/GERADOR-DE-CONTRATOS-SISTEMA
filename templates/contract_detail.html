@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ contract.number }} | Acompanhamento{% endblock %}
+{% block body_class %}admin-page tracking-page{% endblock %}
+{% block body %}
+{% include "_admin_header.html" %}
+<main class="detail-shell">
+  <a class="back-link" href="{{ url_for('tracking') }}">← Voltar ao acompanhamento</a>
+  <section class="detail-heading"><div><span class="eyebrow">Histórico do contrato</span><h1>{{ contract.number }}</h1><p>{{ contract.patient }} · {{ contract.cpf }}</p></div><span class="status-pill large {{ contract.status|lower }}">{{ status_labels[contract.status] }}</span></section>
+  <section class="contract-overview">
+    <div><small>Status atual</small><b>{{ status_labels[contract.status] }}</b></div>
+    <div><small>Criado por</small><b>{{ contract.created_by }}</b></div>
+    <div><small>Criado em</small><b>{{ contract.created_at }}</b></div>
+    <div><small>Link válido até</small><b>{{ contract.expires_at }}</b></div>
+    <div><small>Primeiro envio</small><b>{{ contract.sent_at }}</b></div>
+    <div><small>Primeira visualização</small><b>{{ contract.viewed_at }}</b></div>
+    <div><small>Assinatura</small><b>{{ contract.signed_at }}</b></div>
+    <div><small>Situação do documento</small><b>{% if contract.is_signed %}Assinado e finalizado{% elif contract.is_expired %}Prazo encerrado{% else %}Em andamento{% endif %}</b></div>
+  </section>
+  <section class="timeline-panel"><div class="section-heading compact"><span>↕</span><div><h2>Linha do tempo</h2><p>Eventos registrados no banco de dados.</p></div></div>
+    <ol class="contract-timeline">{% for event in contract.events %}<li class="timeline-event {{ event.event_type|lower }}"><span class="timeline-dot"></span><div><b>{{ event.label }}</b><time>{{ event.display_date }}</time><small>Responsável: {{ event.actor }}</small></div></li>{% endfor %}</ol>
+  </section>
+  <div class="detail-actions"><a class="button secondary" href="{{ url_for('tracking') }}">Ver todos os contratos</a><a class="button primary" href="{{ url_for('index') }}">Gerar novo contrato</a></div>
+</main>
+{% endblock %}

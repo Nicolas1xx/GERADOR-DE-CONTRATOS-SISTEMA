@@ -7,7 +7,7 @@
     <div class="auth-logo-wrap">
       <img src="{{ url_for('logo') }}" alt="Marca do Consultório Odontológico Dr. Ângelo G. Martinez">
     </div>
-    <span class="eyebrow">Área administrativa protegida</span>
+    <span class="eyebrow">Dr. Ângelo G. Martinez</span>
     <h1>Gerador de Contratos</h1>
     <p>Crie, acompanhe e envie contratos com segurança em um único lugar.</p>
   </section>
@@ -19,7 +19,7 @@
         <h2 id="login-title">Acessar o sistema</h2>
       </div>
     </div>
-    <p>Informe sua senha para entrar na área administrativa.</p>
+    <p>Informe sua senha para acessar o sistema do Dr. Ângelo G. Martinez.</p>
     {% if error %}<div class="alert error" role="alert">{{ error }}</div>{% endif %}
     <form method="post" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

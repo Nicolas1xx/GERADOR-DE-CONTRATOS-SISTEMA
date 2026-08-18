@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Acompanhamento | Gerador de Contratos{% endblock %}
+{% block body_class %}admin-page tracking-page{% endblock %}
+{% block body %}
+{% include "_admin_header.html" %}
+<main class="tracking-shell">
+  <section class="tracking-intro">
+    <div><span class="eyebrow">Gestão de contratos</span><h1>Acompanhamento</h1><p>Consulte o andamento, os prazos e o histórico persistido de cada contrato.</p></div>
+    <a class="button primary" href="{{ url_for('index') }}">Gerar novo contrato</a>
+  </section>
+
+  <form class="tracking-filters" method="get" action="{{ url_for('tracking') }}">
+    <div class="filter-search"><label for="q">Paciente ou número do contrato</label><input id="q" name="q" value="{{ filters.q }}" maxlength="120" placeholder="Ex.: João da Silva ou CTR-20260817..."></div>
+    <div><label for="status">Status</label><select id="status" name="status"><option value="">Todos os status</option>{% for value,label in status_labels.items() %}<option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label for="data_de">Criado a partir de</label><input id="data_de" name="data_de" type="date" value="{{ filters.data_de }}"></div>
+    <div><label for="data_ate">Criado até</label><input id="data_ate" name="data_ate" type="date" value="{{ filters.data_ate }}"></div>
+    <div class="filter-actions"><button class="button primary" type="submit">Pesquisar</button><a class="button secondary" href="{{ url_for('tracking') }}">Limpar</a></div>
+  </form>
+  {% if filter_error %}<div class="alert error" role="alert">{{ filter_error }}</div>{% endif %}
+
+  <section class="contracts-panel" aria-labelledby="contracts-title">
+    <div class="contracts-heading"><div><span class="eyebrow">Resultados</span><h2 id="contracts-title">Contratos</h2></div><span>{{ total }} registro(s) · mais recentes primeiro</span></div>
+    {% if contracts %}
+    <div class="contracts-table-wrap"><table class="contracts-table"><thead><tr><th>Contrato</th><th>Paciente</th><th>CPF</th><th>Criado por</th><th>Criação</th><th>Validade</th><th>Envio</th><th>Visualização</th><th>Assinatura</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+      {% for contract in contracts %}<tr>
+        <td data-label="Contrato"><strong>{{ contract.number }}</strong></td>
+        <td data-label="Paciente">{{ contract.patient }}</td>
+        <td data-label="CPF">{{ contract.cpf }}</td>
+        <td data-label="Criado por">{{ contract.created_by }}</td>
+        <td data-label="Criação">{{ contract.created_at }}</td>
+        <td data-label="Validade">{{ contract.expires_at }}</td>
+        <td data-label="Envio">{{ contract.sent_at }}</td>
+        <td data-label="Visualização">{{ contract.viewed_at }}</td>
+        <td data-label="Assinatura">{{ contract.signed_at }}</td>
+        <td data-label="Status"><span class="status-pill {{ contract.status|lower }}">{{ status_labels[contract.status] }}</span></td>
+        <td data-label="Ações"><a class="history-link" href="{{ url_for('contract_history', contract_id=contract.id) }}">Ver histórico</a></td>
+      </tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="empty-state"><span>○</span><h3>Nenhum contrato encontrado</h3><p>Ajuste os filtros ou gere um novo contrato.</p></div>{% endif %}
+  </section>
+  {% if total_pages > 1 %}<nav class="pagination" aria-label="Paginação dos contratos"><a class="button secondary{% if not previous_url %} disabled{% endif %}"{% if previous_url %} href="{{ previous_url }}"{% else %} aria-disabled="true"{% endif %}>Anterior</a><span>Página {{ page }} de {{ total_pages }}</span><a class="button secondary{% if not next_url %} disabled{% endif %}"{% if next_url %} href="{{ next_url }}"{% else %} aria-disabled="true"{% endif %}>Próxima</a></nav>{% endif %}
+</main>
+<footer class="admin-footer wide"><span>Consultório Odontológico Dr. Ângelo G. Martinez</span><a href="{{ url_for('privacy') }}">Política de Privacidade</a></footer>
+{% endblock %}
