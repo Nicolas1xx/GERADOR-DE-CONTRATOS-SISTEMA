@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Entrar | Gerador de Contratos{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block body %}
+<main class="auth-shell">
+  <section class="auth-brand">
+    <img src="{{ url_for('logo') }}" alt="Marca do Consultório Odontológico Dr. Ângelo G. Martinez">
+    <span class="eyebrow">Área administrativa protegida</span>
+    <h1>Gerador de<br>Contratos</h1>
+    <p>Acesso exclusivo para a equipe autorizada do consultório.</p>
+  </section>
+  <section class="auth-card" aria-labelledby="login-title">
+    <div class="lock-mark" aria-hidden="true">●</div>
+    <h2 id="login-title">Acessar o sistema</h2>
+    <p>Use suas credenciais administrativas para continuar.</p>
+    {% if error %}<div class="alert error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="username">Usuário</label>
+      <input id="username" name="username" autocomplete="username" maxlength="80" required autofocus>
+      <label for="password">Senha</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="200" required>
+      <button class="button primary full" type="submit">Entrar</button>
+    </form>
+    <small>Por segurança, a sessão expira automaticamente.</small>
+  </section>
+</main>
+<footer class="public-footer"><a href="{{ url_for('privacy') }}">Política de Privacidade</a></footer>
+{% endblock %}

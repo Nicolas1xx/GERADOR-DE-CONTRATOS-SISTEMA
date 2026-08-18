@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .venv/
 tmp/
+.vercel
+instance/
+.pytest_cache/

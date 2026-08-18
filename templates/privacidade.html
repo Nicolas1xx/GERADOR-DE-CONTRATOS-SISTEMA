@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Política de Privacidade | Contratos{% endblock %}
+{% block body_class %}privacy-page{% endblock %}
+{% block body %}
+<header class="simple-header"><a class="brand" href="{{ url_for('login') }}"><img src="{{ url_for('logo') }}" alt="Logo"><span><b>Consultório Odontológico</b><small>Dr. Ângelo G. Martinez</small></span></a></header>
+<main class="privacy-shell"><span class="eyebrow">LGPD e transparência</span><h1>Política de Privacidade</h1><p class="lead">Esta página explica, de forma simples, como os dados usados na preparação e assinatura dos contratos são tratados.</p>
+  <section><h2>Dados utilizados</h2><p>O sistema trata dados de identificação e contato, como nome, CPF, RG, telefone, e-mail e endereço, além das informações necessárias ao contrato e ao procedimento contratado.</p></section>
+  <section><h2>Finalidade</h2><p>Os dados são usados exclusivamente para preparar, disponibilizar, assinar e acompanhar o contrato, cumprir obrigações legais e manter o registro administrativo do atendimento.</p></section>
+  <section><h2>Proteção e acesso</h2><p>A área de criação é restrita à equipe autorizada. O paciente acessa somente o contrato associado ao link individual recebido. Os dados armazenados pelo sistema são protegidos e não são incluídos em APIs públicas.</p></section>
+  <section><h2>Prazo e compartilhamento</h2><p>O link de assinatura fica disponível por 7 dias. Os dados não são comercializados. Eles podem ser compartilhados apenas quando necessário para cumprimento de obrigação legal, exercício de direitos ou execução do serviço contratado.</p></section>
+  <section><h2>Seus direitos</h2><p>O titular pode solicitar confirmação de tratamento, correção, acesso e outras medidas previstas na LGPD, observados os prazos legais de guarda aplicáveis. Para exercer seus direitos ou esclarecer dúvidas, entre em contato diretamente com o consultório pelos canais habituais.</p></section>
+  <a class="button secondary" href="{{ request.referrer if request.referrer and request.referrer.startswith(request.host_url) else url_for('login') }}">Voltar</a>
+</main><footer class="public-footer">Última atualização: agosto de 2026</footer>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Link do contrato | Dr. Ângelo G. Martinez{% endblock %}
+{% block body_class %}status-page{% endblock %}
+{% block body %}
+<main class="status-shell"><section class="status-card"><img src="{{ url_for('logo') }}" alt="Marca do consultório">
+  {% if state == 'expired' %}<div class="status-icon warning">!</div><h1>Este link expirou</h1><p>O prazo de 7 dias foi encerrado. Solicite um novo link ao consultório.</p>
+  {% elif state == 'signed' %}<div class="status-icon success">✓</div><h1>Contrato já assinado</h1><p>Este contrato foi concluído e não aceita uma nova assinatura. Entre em contato com o consultório se precisar de uma cópia.</p>
+  {% elif state == 'invalid' %}<div class="status-icon warning">!</div><h1>Link inválido</h1><p>Não foi possível localizar este contrato. Confira se o link foi copiado por inteiro ou solicite um novo envio.</p>
+  {% elif state == 'request_error' %}<div class="status-icon warning">!</div><h1>Não foi possível continuar</h1><p>A página perdeu a validade de segurança. Atualize-a e tente novamente.</p>
+  {% else %}<div class="status-icon warning">!</div><h1>Página não encontrada</h1><p>O endereço informado não existe ou não está mais disponível.</p>{% endif %}
+  <small>Consultório Odontológico Dr. Ângelo G. Martinez</small><a href="{{ url_for('privacy') }}">Política de Privacidade</a>
+</section></main>
+{% endblock %}
