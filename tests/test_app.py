@@ -458,3 +458,48 @@ def test_appointment_empty_invalid_and_edit_conflict():
     response = admin.post(f"/agendamentos/{second_id}/editar", data=conflict_edit, follow_redirects=True)
     assert "Este horário já possui um atendimento agendado" in response.get_data(as_text=True)
     assert application.store.get_appointment(second_id)["appointment_time"] == "16:00"
+
+
+def test_appointment_soft_delete_hides_record_preserves_audit_and_releases_slot():
+    admin = application.app.test_client()
+    created = create_appointment(admin)
+    appointment_id = created.location.rsplit("/", 1)[1]
+    detail = admin.get(created.location)
+    deleted = admin.post(
+        f"/agendamentos/{appointment_id}/excluir",
+        data={"csrf_token": csrf_from(detail)},
+        follow_redirects=True,
+    )
+    page = deleted.get_data(as_text=True)
+    assert deleted.status_code == 200
+    assert "Agendamento excluído da agenda" in page
+    assert "Carlos Agenda Silva" not in page
+    assert application.store.get_appointment(appointment_id) is None
+    assert application.store.list_appointments() == []
+    with application.store.connect() as connection:
+        stored = connection.execute(
+            "SELECT status, deleted_at FROM appointments WHERE id = ?", (appointment_id,)
+        ).fetchone()
+    assert stored["status"] == "CANCELADO" and stored["deleted_at"]
+    assert "EXCLUIDO" in {
+        event["event_type"] for event in application.store.appointment_events(appointment_id)
+    }
+    assert admin.get(f"/agendamentos/{appointment_id}").status_code == 404
+
+    replacement = admin.post(
+        "/agendamentos/novo",
+        data=dict(VALID_APPOINTMENT, patient_name="Paciente Substituto Silva",
+                  csrf_token=csrf_from(admin.get("/agendamentos"))),
+    )
+    assert replacement.status_code == 302 and "/agendamentos/" in replacement.location
+
+
+def test_privacy_page_is_clear_for_public_and_admin_visitors():
+    public = application.app.test_client().get("/privacidade")
+    public_text = public.get_data(as_text=True)
+    assert public.status_code == 200
+    assert "Uso responsável" in public_text and "Exclusão de agendamentos" in public_text
+    admin = application.app.test_client()
+    login(admin)
+    admin_text = admin.get("/privacidade").get_data(as_text=True)
+    assert "Voltar ao sistema" in admin_text and "Navegação administrativa" in admin_text

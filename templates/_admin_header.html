@@ -8,7 +8,7 @@
       <a href="{{ url_for('index') }}"{% if request.endpoint in ('index', 'gerar') %} aria-current="page"{% endif %}>Novo contrato</a>
       <a href="{{ url_for('tracking') }}"{% if request.endpoint in ('tracking', 'contract_history') %} aria-current="page"{% endif %}>Acompanhamento</a>
       <a href="{{ url_for('appointments') }}"{% if request.endpoint in ('appointments', 'appointment_detail') %} aria-current="page"{% endif %}>Agendamentos</a>
-      <a href="{{ url_for('privacy') }}">Privacidade</a>
+      <a class="privacy-nav-link" href="{{ url_for('privacy') }}"{% if request.endpoint == 'privacy' %} aria-current="page"{% endif %}>Privacidade</a>
     </nav>
     <div class="admin-actions">
       <span class="session-label">Dr. Ângelo G. Martinez</span>

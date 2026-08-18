@@ -1,14 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Política de Privacidade | Contratos{% endblock %}
+{% block title %}Política de Privacidade | Dr. Ângelo G. Martinez{% endblock %}
 {% block body_class %}privacy-page{% endblock %}
 {% block body %}
-<header class="simple-header"><a class="brand" href="{{ url_for('login') }}"><img src="{{ url_for('logo') }}" alt="Logo"><span><b>Consultório Odontológico</b><small>Dr. Ângelo G. Martinez</small></span></a></header>
-<main class="privacy-shell"><span class="eyebrow">LGPD e transparência</span><h1>Política de Privacidade</h1><p class="lead">Esta página explica, de forma simples, como os dados usados na preparação e assinatura dos contratos são tratados.</p>
-  <section><h2>Dados utilizados</h2><p>O sistema trata dados de identificação e contato, como nome, CPF, RG, telefone, e-mail e endereço, além das informações necessárias ao contrato e ao procedimento contratado.</p></section>
-  <section><h2>Finalidade</h2><p>Os dados são usados exclusivamente para preparar, disponibilizar, assinar e acompanhar o contrato, cumprir obrigações legais e manter o registro administrativo do atendimento.</p></section>
-  <section><h2>Proteção e acesso</h2><p>A área de criação é restrita à equipe autorizada. O paciente acessa somente o contrato associado ao link individual recebido. Os dados armazenados pelo sistema são protegidos e não são incluídos em APIs públicas.</p></section>
-  <section><h2>Prazo e compartilhamento</h2><p>O link de assinatura fica disponível por 7 dias. Os dados não são comercializados. Eles podem ser compartilhados apenas quando necessário para cumprimento de obrigação legal, exercício de direitos ou execução do serviço contratado.</p></section>
-  <section><h2>Seus direitos</h2><p>O titular pode solicitar confirmação de tratamento, correção, acesso e outras medidas previstas na LGPD, observados os prazos legais de guarda aplicáveis. Para exercer seus direitos ou esclarecer dúvidas, entre em contato diretamente com o consultório pelos canais habituais.</p></section>
-  <a class="button secondary" href="{{ request.referrer if request.referrer and request.referrer.startswith(request.host_url) else url_for('login') }}">Voltar</a>
-</main><footer class="public-footer">Última atualização: agosto de 2026</footer>
+{% if session.get('admin_user') %}
+  {% include "_admin_header.html" %}
+{% else %}
+  <header class="simple-header"><a class="brand" href="{{ url_for('login') }}"><span class="brand-logo"><img src="{{ url_for('logo') }}" alt="Logo do Consultório Odontológico Dr. Ângelo G. Martinez"></span><span class="brand-copy"><b>Consultório Odontológico</b><small>Dr. Ângelo G. Martinez</small></span></a></header>
+{% endif %}
+<main class="privacy-shell privacy-refined">
+  <section class="privacy-hero">
+    <span class="privacy-shield" aria-hidden="true">✓</span>
+    <div><span class="eyebrow">LGPD e transparência</span><h1>Política de Privacidade</h1><p class="lead">Entenda, de forma clara, como os dados de pacientes são utilizados e protegidos nos contratos e agendamentos do consultório.</p></div>
+  </section>
+
+  <section class="privacy-highlights" aria-label="Resumo da política">
+    <div><span>01</span><b>Uso responsável</b><small>Dados utilizados somente para atendimento, contratos e obrigações legais.</small></div>
+    <div><span>02</span><b>Acesso controlado</b><small>Área administrativa protegida e links individuais para assinatura.</small></div>
+    <div><span>03</span><b>Proteção técnica</b><small>Dados sensíveis criptografados e ações importantes registradas.</small></div>
+  </section>
+
+  <section class="privacy-content">
+    <article><h2>Quais dados utilizamos</h2><p>Podemos tratar nome, CPF, RG, telefone, e-mail, endereço e informações necessárias ao agendamento, atendimento, procedimento e contrato odontológico.</p></article>
+    <article><h2>Por que utilizamos os dados</h2><p>As informações são usadas para organizar atendimentos, preparar documentos, disponibilizar a assinatura, manter o acompanhamento administrativo e cumprir obrigações legais.</p></article>
+    <article><h2>Como protegemos as informações</h2><p>O acesso administrativo exige autenticação. Dados pessoais armazenados são criptografados, pesquisas usam identificadores protegidos e o paciente visualiza somente o contrato associado ao link individual recebido.</p></article>
+    <article><h2>Compartilhamento e conservação</h2><p>Os dados não são comercializados. O compartilhamento ocorre apenas quando necessário para o serviço, exercício de direitos ou cumprimento de obrigação legal. Os registros são conservados pelo período necessário e conforme os prazos legais aplicáveis.</p></article>
+    <article><h2>Exclusão de agendamentos</h2><p>Agendamentos removidos deixam de aparecer nas telas operacionais. Uma marca técnica mínima e o histórico da ação podem ser preservados para segurança, auditoria e cumprimento de obrigações.</p></article>
+    <article><h2>Direitos do titular</h2><p>O titular pode solicitar confirmação do tratamento, acesso, correção e demais medidas previstas na LGPD. Para exercer seus direitos, entre em contato com o consultório pelos canais habituais.</p></article>
+  </section>
+
+  <div class="privacy-actions"><a class="button primary" href="{{ url_for('index') if session.get('admin_user') else url_for('login') }}">{{ 'Voltar ao sistema' if session.get('admin_user') else 'Acessar o sistema' }}</a></div>
+</main>
+<footer class="public-footer"><span>Consultório Odontológico Dr. Ângelo G. Martinez</span><small>Política atualizada em agosto de 2026</small></footer>
 {% endblock %}

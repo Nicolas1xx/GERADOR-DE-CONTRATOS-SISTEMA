@@ -15,9 +15,9 @@ A opção existente de baixar o Word sem assinatura foi preservada.
 
 ## Agenda
 
-A área administrativa possui visualizações por dia, semana, mês e lista, pesquisa protegida por tokens HMAC, filtros, indicadores do dia, edição, cancelamento sem exclusão, confirmação rápida, histórico e mensagem editável para WhatsApp. Os dados pessoais do agendamento ficam criptografados.
+A área administrativa possui visualizações por dia, semana, mês e lista, pesquisa protegida por tokens HMAC, filtros, indicadores do dia, edição, cancelamento, exclusão lógica segura, confirmação rápida, histórico e mensagem editável para WhatsApp. Os dados pessoais do agendamento ficam criptografados.
 
-Conflitos de horário do mesmo profissional são impedidos por uma restrição exclusiva parcial no banco. Agendamentos cancelados permanecem no histórico e liberam o horário para uma nova marcação.
+Conflitos de horário do mesmo profissional são impedidos por uma restrição exclusiva parcial no banco. Agendamentos excluídos deixam as telas operacionais, liberam o horário e mantêm a trilha técnica de auditoria.
 
 ## Desenvolvimento local
 

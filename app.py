@@ -56,6 +56,7 @@ APPOINTMENT_EVENT_LABELS = {
     "HORARIO_ALTERADO": "Horário alterado", "STATUS_ALTERADO": "Status alterado",
     "CONFIRMADO": "Agendamento confirmado", "CONCLUIDO": "Atendimento concluído",
     "CANCELADO": "Agendamento cancelado", "CONFIRMACAO_ENVIADA": "Confirmação preparada",
+    "EXCLUIDO": "Agendamento excluído",
 }
 APPOINTMENT_FIELD_LIMITS = {
     "patient_name": 120, "cpf": 14, "phone": 19, "email": 150,
@@ -859,6 +860,23 @@ def appointment_confirmation_sent(appointment_id):
                                        "Confirmação preparada para envio pelo WhatsApp", _iso(_now())):
         return jsonify({"erro": "Agendamento não encontrado."}), 404
     return jsonify({"ok": True})
+
+
+@app.post("/agendamentos/<appointment_id>/excluir")
+@login_required
+def delete_appointment(appointment_id):
+    limited = _rate_limit("delete-appointment", 30, 60 * 60)
+    if limited:
+        return limited
+    _check_csrf()
+    row = store.get_appointment(appointment_id)
+    if not row:
+        abort(404)
+    if not store.soft_delete_appointment(appointment_id, _audit_actor(), _iso(_now())):
+        flash("Não foi possível excluir o agendamento. Atualize a página e tente novamente.", "erro")
+        return redirect(url_for("appointment_detail", appointment_id=appointment_id))
+    flash("Agendamento excluído da agenda. O histórico foi preservado com segurança.", "sucesso")
+    return redirect(url_for("appointments"))
 
 
 @app.get("/logo")

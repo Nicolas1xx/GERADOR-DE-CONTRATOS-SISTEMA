@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    deleted_at TEXT,
     contract_id TEXT,
     FOREIGN KEY(appointment_type_id) REFERENCES appointment_types(id),
     FOREIGN KEY(contract_id) REFERENCES contracts(id)
@@ -129,6 +130,14 @@ class ContractStore:
                         connection.execute(statement)
             else:
                 connection.executescript(SCHEMA)
+            if self.is_postgres:
+                connection.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS deleted_at TEXT")
+            else:
+                appointment_columns = {
+                    row["name"] for row in connection.execute("PRAGMA table_info(appointments)").fetchall()
+                }
+                if "deleted_at" not in appointment_columns:
+                    connection.execute("ALTER TABLE appointments ADD COLUMN deleted_at TEXT")
             # Compatibilidade segura: versões anteriores registravam ENVIADO no
             # histórico, mas mantinham o status como AGUARDANDO.
             connection.execute("""
@@ -336,7 +345,7 @@ class ContractStore:
             row = connection.execute(
                 self._sql("""SELECT a.*, t.name AS appointment_type_name
                     FROM appointments a JOIN appointment_types t ON t.id = a.appointment_type_id
-                    WHERE a.id = ?"""), (appointment_id,)).fetchone()
+                    WHERE a.id = ? AND a.deleted_at IS NULL"""), (appointment_id,)).fetchone()
         return self._dict(row)
 
     def _appointment_ids_for_tokens(self, tokens):
@@ -361,7 +370,8 @@ class ContractStore:
               AND (? = 0 OR a.appointment_date < ?)
               AND (? = 0 OR a.status = ?)
               AND (? = 0 OR a.professional_key = ?)
-              AND (? = 0 OR a.appointment_type_id = ?)"""
+              AND (? = 0 OR a.appointment_type_id = ?)
+              AND a.deleted_at IS NULL"""
         values = (
             int(bool(date_from)), date_from or "",
             int(bool(date_until)), date_until or "",
@@ -417,6 +427,25 @@ class ContractStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def soft_delete_appointment(self, appointment_id, actor, timestamp):
+        with self.connect() as connection:
+            current = connection.execute(
+                self._sql("SELECT status FROM appointments WHERE id = ? AND deleted_at IS NULL"),
+                (appointment_id,),
+            ).fetchone()
+            if not current:
+                return False
+            cursor = connection.execute(
+                self._sql("""UPDATE appointments SET status = ?, deleted_at = ?, updated_at = ?
+                    WHERE id = ? AND deleted_at IS NULL"""),
+                ("CANCELADO", timestamp, timestamp, appointment_id),
+            )
+            if cursor.rowcount != 1:
+                return False
+            self._add_appointment_event(connection, appointment_id, "EXCLUIDO", actor,
+                                        f"Agendamento removido da agenda; status anterior: {current['status']}", timestamp)
+            return True
+
     def add_appointment_event(self, appointment_id, event_type, actor, description, created_at):
         with self.connect() as connection:
             exists = connection.execute(self._sql("SELECT id FROM appointments WHERE id = ?"),
@@ -429,7 +458,7 @@ class ContractStore:
     def appointment_professionals(self):
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT DISTINCT professional FROM appointments ORDER BY professional").fetchall()
+                "SELECT DISTINCT professional FROM appointments WHERE deleted_at IS NULL ORDER BY professional").fetchall()
         return [row["professional"] for row in rows]
 
     def allow_request(self, bucket, identity_hash, limit, window_seconds):
