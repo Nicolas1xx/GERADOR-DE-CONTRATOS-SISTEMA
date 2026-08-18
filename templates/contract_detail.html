@@ -19,6 +19,6 @@
   <section class="timeline-panel"><div class="section-heading compact"><span>↕</span><div><h2>Linha do tempo</h2><p>Eventos registrados no banco de dados.</p></div></div>
     <ol class="contract-timeline">{% for event in contract.events %}<li class="timeline-event {{ event.event_type|lower }}"><span class="timeline-dot"></span><div><b>{{ event.label }}</b><time>{{ event.display_date }}</time><small>Responsável: {{ event.actor }}</small></div></li>{% endfor %}</ol>
   </section>
-  <div class="detail-actions"><a class="button secondary" href="{{ url_for('tracking') }}">Ver todos os contratos</a><a class="button primary" href="{{ url_for('index') }}">Gerar novo contrato</a></div>
+  <div class="detail-actions"><a class="button secondary" href="{{ url_for('tracking') }}">Ver todos os contratos</a><a class="button primary" href="{{ url_for('index') }}">Gerar novo contrato</a><form method="post" action="{{ url_for('delete_contract', contract_id=contract.id) }}" data-confirm="Excluir este contrato da lista e revogar o link de assinatura? Os dados e o histórico continuarão preservados com segurança."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button delete" type="submit">Excluir contrato</button></form></div>
 </main>
 {% endblock %}

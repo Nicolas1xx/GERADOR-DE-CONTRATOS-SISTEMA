@@ -22,8 +22,6 @@ function toggleCustomPeriod() { document.querySelectorAll('[data-custom-period]'
 periodSelect?.addEventListener('change', toggleCustomPeriod);
 toggleCustomPeriod();
 
-document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); }));
-
 function normalizeAppointmentPhone(value) {
   let number = appointmentDigits(value);
   if (number.startsWith('55') && (number.length === 12 || number.length === 13)) number = number.slice(2);

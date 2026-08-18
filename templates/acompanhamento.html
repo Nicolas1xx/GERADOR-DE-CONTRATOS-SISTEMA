@@ -16,6 +16,7 @@
     <div><label for="data_ate">Criado até</label><input id="data_ate" name="data_ate" type="date" value="{{ filters.data_ate }}"></div>
     <div class="filter-actions"><button class="button primary" type="submit">Pesquisar</button><a class="button secondary" href="{{ url_for('tracking') }}">Limpar</a></div>
   </form>
+  {% with messages=get_flashed_messages(with_categories=true) %}{% for category,message in messages %}<div class="alert {{ category }}" role="alert">{{ message }}</div>{% endfor %}{% endwith %}
   {% if filter_error %}<div class="alert error" role="alert">{{ filter_error }}</div>{% endif %}
 
   <section class="contracts-panel" aria-labelledby="contracts-title">
@@ -33,7 +34,7 @@
         <td data-label="Visualização">{{ contract.viewed_at }}</td>
         <td data-label="Assinatura">{{ contract.signed_at }}</td>
         <td data-label="Status"><span class="status-pill {{ contract.status|lower }}">{{ status_labels[contract.status] }}</span></td>
-        <td data-label="Ações"><a class="history-link" href="{{ url_for('contract_history', contract_id=contract.id) }}">Ver histórico</a></td>
+        <td data-label="Ações"><div class="contract-row-actions"><a class="history-link" href="{{ url_for('contract_history', contract_id=contract.id) }}">Ver histórico</a><form method="post" action="{{ url_for('delete_contract', contract_id=contract.id) }}" data-confirm="Excluir este contrato da lista e revogar o link de assinatura? Os dados e o histórico continuarão preservados com segurança."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="quick-delete" type="submit">Excluir</button></form></div></td>
       </tr>{% endfor %}
     </tbody></table></div>
     {% else %}<div class="empty-state"><span>○</span><h3>Nenhum contrato encontrado</h3><p>Ajuste os filtros ou gere um novo contrato.</p></div>{% endif %}

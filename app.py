@@ -44,7 +44,7 @@ STATUS_LABELS = {
 EVENT_LABELS = {
     "CRIADO": "Contrato criado", "ENVIADO": "Link enviado",
     "VISUALIZADO": "Paciente visualizou", "ASSINADO": "Contrato assinado",
-    "EXPIRADO": "Contrato expirado",
+    "EXPIRADO": "Contrato expirado", "EXCLUIDO": "Contrato excluído da área administrativa",
 }
 APPOINTMENT_STATUS_LABELS = {
     "AGENDADO": "Agendado", "CONFIRMADO": "Confirmado", "AGUARDANDO": "Aguardando",
@@ -637,6 +637,26 @@ def contract_history(contract_id):
     if not row:
         abort(404)
     return render_template("contract_detail.html", contract=_tracking_item(row, include_events=True))
+
+
+@app.post("/acompanhamento/<contract_id>/excluir")
+@login_required
+def delete_contract(contract_id):
+    limited = _rate_limit("delete-contract", 30, 60 * 60)
+    if limited:
+        return limited
+    _check_csrf()
+    try:
+        uuid.UUID(contract_id)
+    except ValueError:
+        abort(404)
+    if not store.get_by_id(contract_id):
+        abort(404)
+    if not store.soft_delete_contract(contract_id, _audit_actor(), _iso(_now())):
+        flash("Não foi possível excluir o contrato. Atualize a página e tente novamente.", "erro")
+        return redirect(url_for("tracking"))
+    flash("Contrato excluído da lista e link de assinatura revogado. Os dados e o histórico foram preservados.", "sucesso")
+    return redirect(url_for("tracking"))
 
 
 @app.get("/agendamentos")

@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS contracts (
     expires_at TEXT NOT NULL,
     status TEXT NOT NULL,
     first_viewed_at TEXT,
-    signed_at TEXT
+    signed_at TEXT,
+    deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_contracts_created_at ON contracts(created_at);
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
@@ -131,8 +132,14 @@ class ContractStore:
             else:
                 connection.executescript(SCHEMA)
             if self.is_postgres:
+                connection.execute("ALTER TABLE contracts ADD COLUMN IF NOT EXISTS deleted_at TEXT")
                 connection.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS deleted_at TEXT")
             else:
+                contract_columns = {
+                    row["name"] for row in connection.execute("PRAGMA table_info(contracts)").fetchall()
+                }
+                if "deleted_at" not in contract_columns:
+                    connection.execute("ALTER TABLE contracts ADD COLUMN deleted_at TEXT")
                 appointment_columns = {
                     row["name"] for row in connection.execute("PRAGMA table_info(appointments)").fetchall()
                 }
@@ -189,7 +196,7 @@ class ContractStore:
     def mark_sent(self, contract_id, actor, timestamp):
         with self.connect() as connection:
             cursor = connection.execute(
-                self._sql("UPDATE contracts SET status = ? WHERE id = ? AND status = ?"),
+                self._sql("UPDATE contracts SET status = ? WHERE id = ? AND deleted_at IS NULL AND status = ?"),
                 ("ENVIADO", contract_id, "AGUARDANDO"),
             )
             if cursor.rowcount != 1:
@@ -199,22 +206,32 @@ class ContractStore:
 
     def get_by_token_hash(self, token_hash):
         with self.connect() as connection:
-            row = connection.execute(self._sql("SELECT * FROM contracts WHERE token_hash = ?"), (token_hash,)).fetchone()
+            row = connection.execute(
+                self._sql("SELECT * FROM contracts WHERE token_hash = ? AND deleted_at IS NULL"),
+                (token_hash,),
+            ).fetchone()
         return self._dict(row)
 
     def get_by_id(self, contract_id):
         with self.connect() as connection:
-            row = connection.execute(self._sql("SELECT * FROM contracts WHERE id = ?"), (contract_id,)).fetchone()
+            row = connection.execute(
+                self._sql("SELECT * FROM contracts WHERE id = ? AND deleted_at IS NULL"),
+                (contract_id,),
+            ).fetchone()
         return self._dict(row)
 
     def list_recent(self, limit=30):
         with self.connect() as connection:
-            rows = connection.execute(self._sql("SELECT * FROM contracts ORDER BY created_at DESC LIMIT ?"), (limit,)).fetchall()
+            rows = connection.execute(
+                self._sql("SELECT * FROM contracts WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT ?"),
+                (limit,),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def list_filtered(self, status=None, created_from=None, created_until=None):
         query = """SELECT * FROM contracts
-            WHERE (? = 0 OR status = ?)
+            WHERE deleted_at IS NULL
+              AND (? = 0 OR status = ?)
               AND (? = 0 OR created_at >= ?)
               AND (? = 0 OR created_at < ?)
             ORDER BY created_at DESC"""
@@ -230,13 +247,13 @@ class ContractStore:
     def expire_due(self, timestamp):
         with self.connect() as connection:
             rows = connection.execute(
-                self._sql("SELECT id FROM contracts WHERE expires_at <= ? AND status NOT IN (?, ?)"),
+                self._sql("SELECT id FROM contracts WHERE deleted_at IS NULL AND expires_at <= ? AND status NOT IN (?, ?)"),
                 (timestamp, "EXPIRADO", "ASSINADO"),
             ).fetchall()
             expired_ids = [row["id"] for row in rows]
             for contract_id in expired_ids:
                 cursor = connection.execute(
-                    self._sql("UPDATE contracts SET status = ? WHERE id = ? AND status NOT IN (?, ?)"),
+                    self._sql("UPDATE contracts SET status = ? WHERE id = ? AND deleted_at IS NULL AND status NOT IN (?, ?)"),
                     ("EXPIRADO", contract_id, "EXPIRADO", "ASSINADO"),
                 )
                 if cursor.rowcount == 1:
@@ -248,7 +265,7 @@ class ContractStore:
             cursor = connection.execute(
                 self._sql("""UPDATE contracts SET first_viewed_at = ?, status = ?
                     WHERE id = ? AND first_viewed_at IS NULL AND signed_at IS NULL
-                      AND status <> ?"""),
+                      AND deleted_at IS NULL AND status <> ?"""),
                 (timestamp, "VISUALIZADO", contract_id, "EXPIRADO"),
             )
             if cursor.rowcount != 1:
@@ -260,7 +277,8 @@ class ContractStore:
         with self.connect() as connection:
             cursor = connection.execute(
                 self._sql("""UPDATE contracts SET signed_at = ?, status = ?
-                    WHERE id = ? AND signed_at IS NULL AND status <> ? AND expires_at > ?"""),
+                    WHERE id = ? AND signed_at IS NULL AND deleted_at IS NULL
+                      AND status <> ? AND expires_at > ?"""),
                 (timestamp, "ASSINADO", contract_id, "EXPIRADO", timestamp),
             )
             if cursor.rowcount != 1:
@@ -271,13 +289,25 @@ class ContractStore:
     def mark_expired(self, contract_id, timestamp):
         with self.connect() as connection:
             cursor = connection.execute(
-                self._sql("UPDATE contracts SET status = ? WHERE id = ? AND status NOT IN (?, ?)"),
+                self._sql("UPDATE contracts SET status = ? WHERE id = ? AND deleted_at IS NULL AND status NOT IN (?, ?)"),
                 ("EXPIRADO", contract_id, "EXPIRADO", "ASSINADO"),
             )
             if cursor.rowcount == 1:
                 self._add_event(connection, contract_id, "EXPIRADO", "sistema", timestamp)
                 return True
             return False
+
+    def soft_delete_contract(self, contract_id, actor, timestamp):
+        """Oculta o contrato e revoga seu token sem apagar dados ou histórico."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                self._sql("UPDATE contracts SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL"),
+                (timestamp, contract_id),
+            )
+            if cursor.rowcount != 1:
+                return False
+            self._add_event(connection, contract_id, "EXCLUIDO", actor, timestamp)
+            return True
 
     def events_for(self, contract_id):
         with self.connect() as connection:

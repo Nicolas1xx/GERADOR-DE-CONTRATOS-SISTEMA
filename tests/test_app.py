@@ -300,6 +300,44 @@ def test_tracking_routes_require_authentication():
     assert client.get("/acompanhamento/not-a-uuid").status_code == 302
 
 
+def test_contract_soft_delete_hides_record_revokes_link_and_preserves_audit():
+    admin = application.app.test_client()
+    created = create_contract(admin, {"nome_paciente": "Contrato Teste Excluir"})
+    payload = created.json
+    contract_id = payload["id"]
+    token = token_from_payload(payload)
+
+    detail = admin.get(f"/acompanhamento/{contract_id}")
+    deleted = admin.post(
+        f"/acompanhamento/{contract_id}/excluir",
+        data={"csrf_token": csrf_from(detail)},
+        follow_redirects=True,
+    )
+    page = deleted.get_data(as_text=True)
+    assert deleted.status_code == 200
+    assert "Contrato excluído da lista" in page
+    assert "Contrato Teste Excluir" not in page
+    assert application.store.get_by_id(contract_id) is None
+    assert admin.get(f"/acompanhamento/{contract_id}").status_code == 404
+    invalid_link = application.app.test_client().get(f"/assinar/{token}")
+    assert invalid_link.status_code == 404 and "Link inválido" in invalid_link.get_data(as_text=True)
+
+    with application.store.connect() as connection:
+        stored = connection.execute(
+            "SELECT status, deleted_at, data_ciphertext FROM contracts WHERE id = ?", (contract_id,)
+        ).fetchone()
+    assert stored["deleted_at"] and stored["data_ciphertext"]
+    assert [event["event_type"] for event in application.store.events_for(contract_id)] == ["CRIADO", "EXCLUIDO"]
+
+
+def test_contract_delete_requires_authentication_and_csrf():
+    anonymous = application.app.test_client()
+    assert anonymous.post(f"/acompanhamento/{uuid.uuid4()}/excluir").status_code == 302
+    admin = application.app.test_client()
+    created = create_contract(admin)
+    assert admin.post(f"/acompanhamento/{created.json['id']}/excluir").status_code == 400
+
+
 def test_appointment_creation_validation_encryption_and_conflict():
     anonymous = application.app.test_client()
     assert anonymous.get("/agendamentos").status_code == 302
