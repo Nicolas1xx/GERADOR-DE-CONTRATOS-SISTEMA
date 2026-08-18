@@ -126,10 +126,11 @@ generateButton.addEventListener('click', async () => {
 });
 
 document.getElementById('copyLink').addEventListener('click', async event => {
+  const button = event.currentTarget;
   const link = document.getElementById('signatureLink').value;
-  try { await navigator.clipboard.writeText(link); event.currentTarget.textContent = 'Link copiado'; }
-  catch { document.getElementById('signatureLink').select(); document.execCommand('copy'); event.currentTarget.textContent = 'Link copiado'; }
-  setTimeout(() => { event.currentTarget.textContent = 'Copiar link'; }, 1800);
+  try { await navigator.clipboard.writeText(link); button.textContent = 'Link copiado'; }
+  catch { document.getElementById('signatureLink').select(); document.execCommand('copy'); button.textContent = 'Link copiado'; }
+  setTimeout(() => { button.textContent = 'Copiar link'; }, 1800);
 });
 
 document.getElementById('sendWhatsapp').addEventListener('click', async () => {
